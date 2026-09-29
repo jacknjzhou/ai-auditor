@@ -1,0 +1,72 @@
+template_id: expense_claim_v1
+name: 报销单
+version: 1
+category: 财务
+description: 费用报销单（含OA导出/纸质单据）关键要素提取，支持费用明细一对多
+
+match:
+  keywords: ["报销", "费用报销", "报销单", "事由", "合计金额", "附件"]
+  filename_patterns: ["*报销*", "*费用*"]
+  min_score: 2
+
+fields:
+  - key: claimant
+    label: 报销人
+    type: string
+    required: true
+  - key: department
+    label: 部门
+    type: string
+    required: true
+  - key: claim_date
+    label: 填单日期
+    type: date
+    required: false
+  - key: reason
+    label: 报销事由
+    type: string
+    required: true
+    hint: 一句话概括，超过50字截断
+  - key: items
+    label: 费用明细
+    type: array
+    required: true
+    items:
+      - key: expense_type
+        label: 费用类型
+        type: enum
+        enum_values: ["差旅费", "交通费", "住宿费", "餐饮费", "招待费", "办公用品", "通讯费", "培训费", "其他"]
+      - key: expense_date
+        label: 费用发生日期
+        type: date
+      - key: amount
+        label: 金额（元）
+        type: money
+      - key: invoice_count
+        label: 单据张数
+        type: number
+  - key: total_amount
+    label: 报销总金额（元）
+    type: money
+    required: true
+    sum_check:
+      target: items.amount
+      tolerance: 0.05
+  - key: receipt_count
+    label: 附件张数
+    type: number
+    required: false
+    hint: 明细单据张数之和应等于附件张数，不符标黄
+  - key: approval_status
+    label: 审批状态
+    type: enum
+    enum_values: ["待审批", "审批中", "已通过", "已驳回", "已支付"]
+    required: false
+    hint: 无明确审批栏则填"已通过"（纸质单据通常已签批）
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 明细求和=总金额
+      expr: "abs(sum(items.amount) - total_amount) <= 0.05"
+      on_fail: red

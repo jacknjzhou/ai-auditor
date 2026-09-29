@@ -1,0 +1,73 @@
+template_id: onboarding_offboarding_v1
+name: 入职/离职单
+version: 1
+category: 人事
+description: 入职登记表、离职申请单关键要素提取
+
+match:
+  keywords: ["入职", "离职", "登记表", "离职申请", "交接", "员工信息"]
+  filename_patterns: ["*入职*", "*离职*", "*登记表*"]
+  min_score: 2
+
+fields:
+  - key: doc_type
+    label: 单据类型
+    type: enum
+    enum_values: ["入职登记", "离职申请"]
+    required: true
+  - key: name
+    label: 姓名
+    type: string
+    required: true
+  - key: employee_id
+    label: 工号
+    type: string
+    required: false
+  - key: department
+    label: 部门
+    type: string
+    required: true
+  - key: position
+    label: 岗位
+    type: string
+    required: true
+  - key: entry_date
+    label: 入职日期
+    type: date
+    required: false
+    hint: doc_type=入职登记 时通常必填，缺失标黄
+  - key: leave_date
+    label: 离职日期
+    type: date
+    required: false
+    hint: doc_type=离职申请 时通常必填，缺失标黄
+  - key: leave_reason
+    label: 离职原因
+    type: string
+    required: false
+  - key: handover_person
+    label: 交接人
+    type: string
+    required: false
+  - key: contact
+    label: 联系电话
+    type: string
+    required: false
+    rule: "^1[3-9][0-9]{9}$"
+  - key: approval_status
+    label: 审批状态
+    type: enum
+    enum_values: ["待审批", "审批中", "已完成", "已驳回"]
+    required: false
+  - key: remarks
+    label: 备注
+    type: string
+    required: false
+
+options:
+  confidence_threshold: 0.8
+  conditional_required:
+    - field: entry_date
+      when: "doc_type == '入职登记'"
+    - field: leave_date
+      when: "doc_type == '离职申请'"

@@ -1,0 +1,14 @@
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+pydantic-settings>=2.2
+sqlalchemy>=2.0
+httpx>=0.27
+pytest>=8.0
+
+# ---- P1 阶段接入（队列 / 生产库 / 向量检索）----
+arq>=0.26          # Redis 队列（queue_mode=arq，失败自动降级 inline）
+# redis            # arq 自带 redis 依赖
+psycopg[binary]>=3.1   # 生产 PostgreSQL 驱动（postgresql+psycopg://）
+# pgvector         # 生产向量检索走 SQL 内 RRF，ORM 侧 JSON 存储，暂无需该包
+# openai           # 审核链走 httpx 直连 NewAPI OpenAI 兼容协议，无需 SDK

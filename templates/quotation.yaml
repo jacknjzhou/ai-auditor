@@ -1,0 +1,97 @@
+template_id: quotation_v1
+name: 报价单
+version: 1
+category: 采购
+description: 供应商报价单要素提取，支持多物料明细，用于比价汇总
+
+match:
+  keywords: ["报价", "单价", "报价单", "含税", "交货期", "有效期"]
+  filename_patterns: ["*报价*", "*quote*", "*quotation*"]
+  min_score: 2
+
+fields:
+  - key: supplier
+    label: 供应商名称
+    type: string
+    required: true
+  - key: quote_no
+    label: 报价单号
+    type: string
+    required: false
+  - key: quote_date
+    label: 报价日期
+    type: date
+    required: false
+  - key: valid_until
+    label: 报价有效期至
+    type: date
+    required: false
+    hint: "报价有效期30天"按报价日期推算
+  - key: currency
+    label: 币种
+    type: enum
+    enum_values: ["CNY", "USD", "EUR", "HKD", "其他"]
+    required: false
+  - key: tax_included
+    label: 价格是否含税
+    type: enum
+    enum_values: ["含税", "不含税", "未注明"]
+    required: false
+  - key: tax_rate
+    label: 税率
+    type: enum
+    enum_values: ["13%", "9%", "6%", "3%", "1%", "0%", "未注明"]
+    required: false
+  - key: items
+    label: 报价明细
+    type: array
+    required: true
+    items:
+      - key: material_name
+        label: 物料名称
+        type: string
+      - key: model
+        label: 型号/规格
+        type: string
+      - key: quantity
+        label: 数量
+        type: number
+      - key: unit
+        label: 单位
+        type: string
+        hint: 个/件/台/套/米等
+      - key: unit_price
+        label: 单价（元）
+        type: money
+      - key: total_price
+        label: 小计（元）
+        type: money
+        hint: 明细无小计列时按 数量×单价 计算
+      - key: delivery_days
+        label: 交货期（天）
+        type: number
+      - key: warranty
+        label: 质保期
+        type: string
+  - key: total_amount
+    label: 报价总额（元）
+    type: money
+    required: true
+    sum_check:
+      target: items.total_price
+      tolerance: 0.05
+  - key: payment_terms
+    label: 付款条件
+    type: string
+    required: false
+  - key: remarks
+    label: 备注
+    type: string
+    required: false
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 明细求和=总额
+      expr: "abs(sum(items.total_price) - total_amount) <= 0.05"
+      on_fail: yellow

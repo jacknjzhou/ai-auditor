@@ -1,0 +1,10 @@
+# 构建上下文排除（.dockerignore 需在构建上下文根目录）
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+.venv/
+.env
+*.md
+.workbuddy/
+git-deploy/

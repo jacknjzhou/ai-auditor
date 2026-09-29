@@ -1,0 +1,90 @@
+template_id: vat_invoice_v1
+name: 增值税发票
+version: 1
+category: 财务
+description: 增值税专用/普通发票（含电子发票、 scanned 扫描件）关键要素提取
+
+match:
+  keywords: ["发票", "增值税", "纳税人识别号", "价税合计", "开票日期", "税率", "税额"]
+  filename_patterns: ["*发票*", "*invoice*", "*fapiao*"]
+  min_score: 2
+
+fields:
+  - key: invoice_type
+    label: 发票类型
+    type: enum
+    enum_values: ["增值税专用发票", "增值税普通发票", "增值税电子专用发票", "增值税电子普通发票", "数电发票"]
+    required: true
+    hint: 看票面标题；"电子"或"数电"按标题判断
+  - key: invoice_number
+    label: 发票号码
+    type: string
+    required: true
+    rule: "^[0-9]{8}$|^[0-9]{20}$"
+    hint: 数电发票为20位数字，纸质票为8位数字或"发票代码+号码"
+  - key: invoice_code
+    label: 发票代码
+    type: string
+    required: false
+    rule: "^[0-9]{10,12}$"
+    hint: 数电发票无此字段，留空
+  - key: invoice_date
+    label: 开票日期
+    type: date
+    required: true
+  - key: buyer_name
+    label: 购买方名称
+    type: string
+    required: true
+  - key: buyer_tax_id
+    label: 购买方税号
+    type: string
+    required: true
+    rule: "^[0-9A-Z]{18}$"
+  - key: seller_name
+    label: 销售方名称
+    type: string
+    required: true
+  - key: seller_tax_id
+    label: 销售方税号
+    type: string
+    required: true
+    rule: "^[0-9A-Z]{18}$"
+  - key: amount
+    label: 金额（不含税，元）
+    type: money
+    required: true
+    hint: "价税合计"上方的不含税金额；多行明细取"合计"行
+  - key: tax_rate
+    label: 税率
+    type: enum
+    enum_values: ["13%", "9%", "6%", "5%", "3%", "1%", "0%", "免税"]
+    required: true
+    hint: 多档税率时取主要档；"免税"填免税
+  - key: tax_amount
+    label: 税额（元）
+    type: money
+    required: true
+  - key: total_amount
+    label: 价税合计（元）
+    type: money
+    required: true
+    hint: 含大小写金额时以数字为准，与小写金额冲突标黄
+  - key: remark
+    label: 备注
+    type: string
+    required: false
+
+dedup:
+  keys: [invoice_number]              # 跨批次业务键撞库
+  compare_fields: [amount, invoice_date, seller_tax_id]   # 不一致 → L3 内容冲突
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 税额勾稽
+      expr: "abs(amount * tax_rate_numeric - tax_amount) <= 0.06"
+      on_fail: red
+    - name: 价税合计勾稽
+      expr: "abs(amount + tax_amount - total_amount) <= 0.02"
+      on_fail: red

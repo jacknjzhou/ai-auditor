@@ -1,0 +1,81 @@
+template_id: tender_notice_v1
+name: 招标公告/招标文件
+version: 1
+category: 招投标
+description: 招标公告、招标文件关键要素提取，生成投标 checklist
+
+match:
+  keywords: ["招标", "投标", "开标", "招标编号", "投标截止", "保证金", "资格要求"]
+  filename_patterns: ["*招标*", "*投标*", "*tender*"]
+  min_score: 2
+
+fields:
+  - key: project_name
+    label: 项目名称
+    type: string
+    required: true
+  - key: tender_no
+    label: 招标编号
+    type: string
+    required: true
+  - key: tenderer
+    label: 招标人
+    type: string
+    required: false
+  - key: agency
+    label: 招标代理机构
+    type: string
+    required: false
+  - key: agency_contact
+    label: 代理联系方式
+    type: string
+    required: false
+    hint: 电话/邮箱
+  - key: procurement_method
+    label: 采购方式
+    type: enum
+    enum_values: ["公开招标", "邀请招标", "竞争性谈判", "竞争性磋商", "询价", "单一来源"]
+    required: false
+  - key: qualification_reqs
+    label: 资质要求
+    type: array
+    required: true
+    items:
+      - key: requirement
+        label: 资质条件
+        type: string
+    hint: 逐条拆分（营业执照、行业资质、业绩要求、财务要求等），这是投标 checklist 的核心
+  - key: bid_deadline
+    label: 投标截止时间
+    type: date
+    required: true
+    hint: 含具体时刻则记录到溯源
+  - key: opening_time
+    label: 开标时间
+    type: date
+    required: false
+  - key: deposit
+    label: 投标保证金（元）
+    type: money
+    required: false
+  - key: doc_fee
+    label: 标书费（元）
+    type: money
+    required: false
+  - key: evaluation_method
+    label: 评标办法摘要
+    type: string
+    required: false
+    hint: 综合评分法/最低价中标等，简述权重设置
+  - key: tender_budget
+    label: 招标控制价/预算（元）
+    type: money
+    required: false
+  - key: submission_place
+    label: 递交地点/方式
+    type: string
+    required: false
+
+options:
+  confidence_threshold: 0.8
+  notes: 资质要求逐条拆分质量决定 checklist 可用性；时间类字段必须给出原文出处

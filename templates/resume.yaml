@@ -1,0 +1,126 @@
+template_id: resume_v1
+name: 简历
+version: 1
+category: 人事
+description: 求职简历关键要素提取，用于人才库标准化入库；支持工作/教育经历一对多
+
+match:
+  keywords: ["简历", "个人简历", "教育经历", "工作经历", "求职意向", "自我评价"]
+  filename_patterns: ["*简历*", "*resume*", "*CV*"]
+  min_score: 2
+
+fields:
+  - key: name
+    label: 姓名
+    type: string
+    required: true
+  - key: gender
+    label: 性别
+    type: enum
+    enum_values: ["男", "女", "未注明"]
+    required: false
+  - key: phone
+    label: 手机号
+    type: string
+    required: true
+    rule: "^1[3-9][0-9]{9}$"
+    hint: 去掉空格和分隔符后校验
+  - key: email
+    label: 邮箱
+    type: string
+    required: false
+  - key: birth_date
+    label: 出生年月
+    type: date
+    required: false
+  - key: highest_degree
+    label: 最高学历
+    type: enum
+    enum_values: ["博士", "硕士", "本科", "大专", "其他"]
+    required: true
+  - key: university
+    label: 毕业院校
+    type: string
+    required: false
+    hint: 最高学历对应院校
+  - key: major
+    label: 专业
+    type: string
+    required: false
+  - key: graduation_date
+    label: 毕业时间
+    type: date
+    required: false
+  - key: work_years
+    label: 工作年限（年）
+    type: number
+    required: false
+    hint: 明确写"X年"取值；未写则按最早工作经历推算并标黄
+  - key: recent_company
+    label: 最近任职公司
+    type: string
+    required: true
+  - key: recent_position
+    label: 最近职位
+    type: string
+    required: true
+  - key: expected_position
+    label: 求职意向岗位
+    type: string
+    required: false
+  - key: expected_salary
+    label: 期望薪资
+    type: string
+    required: false
+    hint: 原样记录，如"20-25K·14薪"
+  - key: skills
+    label: 技能标签
+    type: array
+    required: false
+    items:
+      - key: skill
+        label: 技能
+        type: string
+    hint: 从技能栏/自我评价提炼，每项一个，最多10个
+  - key: work_history
+    label: 工作经历
+    type: array
+    required: false
+    items:
+      - key: company
+        label: 公司
+        type: string
+      - key: position
+        label: 职位
+        type: string
+      - key: start
+        label: 开始时间
+        type: date
+      - key: end
+        label: 结束时间
+        type: date
+        hint: "至今"填当天日期
+  - key: education_history
+    label: 教育经历
+    type: array
+    required: false
+    items:
+      - key: school
+        label: 学校
+        type: string
+      - key: degree
+        label: 学历
+        type: string
+      - key: major
+        label: 专业
+        type: string
+      - key: start
+        label: 开始时间
+        type: date
+      - key: end
+        label: 结束时间
+        type: date
+
+options:
+  confidence_threshold: 0.75
+  notes: 简历排版差异大，阈值放宽到0.75；手机号为强校验字段

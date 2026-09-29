@@ -1,0 +1,65 @@
+template_id: official_incoming_v1
+name: 红头文件/收文
+version: 1
+category: 行政
+description: 外来公文、红头文件收文登记要素提取
+
+match:
+  keywords: ["文号", "通知", "函", "文件", "收文", "签收", "承办"]
+  filename_patterns: ["*函*", "*通知*", "*文*号*", "*收文*"]
+  min_score: 2
+
+fields:
+  - key: sender_org
+    label: 来文单位
+    type: string
+    required: true
+    hint: 红头（文件眉首）发文机关
+  - key: doc_number
+    label: 文号
+    type: string
+    required: true
+    hint: 形如"X办发〔2026〕12号"，注意六角括号〔〕
+  - key: title
+    label: 文件标题
+    type: string
+    required: true
+  - key: doc_type
+    label: 文种
+    type: enum
+    enum_values: ["通知", "函", "批复", "意见", "通报", "决定", "纪要", "其他"]
+    required: false
+  - key: received_date
+    label: 收文日期
+    type: date
+    required: false
+    hint: 收文登记栏日期；无则填成文日期并标黄
+  - key: secrecy_level
+    label: 密级
+    type: enum
+    enum_values: ["公开", "内部", "秘密", "机密", "绝密", "未标注"]
+    required: false
+  - key: urgency
+    label: 缓急
+    type: enum
+    enum_values: ["特急", "加急", "平件", "未标注"]
+    required: false
+  - key: deadline
+    label: 办理时限
+    type: date
+    required: false
+    hint: 明确要求反馈/办结的日期；"X日内"按收文日期推算
+  - key: handling_dept
+    label: 承办部门
+    type: string
+    required: false
+    hint: 领导批示/拟办意见中指定的部门
+  - key: summary
+    label: 内容摘要
+    type: string
+    required: false
+    hint: 100字以内概括来文主旨
+
+options:
+  confidence_threshold: 0.8
+  notes: 涉密文件仅提取登记要素，摘要需注意脱敏（仅概括，不摘抄涉密细节）

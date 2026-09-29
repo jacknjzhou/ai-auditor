@@ -1,0 +1,80 @@
+template_id: lease_contract_v1
+name: 租赁合同
+version: 1
+category: 合同
+description: 房屋/场地/设备租赁合同关键要素提取
+
+match:
+  keywords: ["租赁", "出租", "承租", "租金", "押金", "租期"]
+  filename_patterns: ["*租赁*", "*lease*"]
+  min_score: 2
+
+fields:
+  - key: contract_no
+    label: 合同编号
+    type: string
+    required: false
+  - key: lessor
+    label: 出租方
+    type: string
+    required: true
+  - key: lessee
+    label: 承租方
+    type: string
+    required: true
+  - key: lease_type
+    label: 租赁类型
+    type: enum
+    enum_values: ["房屋租赁", "场地租赁", "设备租赁", "车位租赁", "其他"]
+    required: false
+  - key: property_address
+    label: 租赁物地址/描述
+    type: string
+    required: true
+    hint: 房屋填详细地址；设备填名称型号
+  - key: area
+    label: 面积（㎡）
+    type: number
+    required: false
+  - key: monthly_rent
+    label: 月租金（元）
+    type: money
+    required: true
+    hint: 按月计价填月租金；按日/按年折算为月租金并标黄说明
+  - key: deposit
+    label: 押金（元）
+    type: money
+    required: false
+  - key: lease_start
+    label: 租期开始
+    type: date
+    required: true
+  - key: lease_end
+    label: 租期结束
+    type: date
+    required: true
+  - key: payment_cycle
+    label: 支付周期
+    type: enum
+    enum_values: ["月付", "季付", "半年付", "年付", "一次性"]
+    required: false
+  - key: escalation_clause
+    label: 租金递增条款
+    type: string
+    required: false
+    hint: 如"第三年起每年递增5%"；无则留空
+  - key: free_rent_period
+    label: 免租期
+    type: string
+    required: false
+  - key: breach_clause
+    label: 违约条款摘要
+    type: string
+    required: false
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 租期合法性
+      expr: "lease_start < lease_end"
+      on_fail: red

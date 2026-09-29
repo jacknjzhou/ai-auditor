@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数字人审核控制台</title>
+<style>
+:root{
+  --paper:#F7F3EC; --card:#FFFDF9; --card2:#FBF8F1;
+  --ink:#201A15; --ink2:#5C5347; --ink3:#8A7F70;
+  --line:#E4DCCE; --line2:#D6CCB9;
+  --seal:#B42318; --seal-dk:#8F1B12; --seal-bg:#FBEDEA;
+  --ok:#2F7D5B; --ok-bg:#EAF3EE;
+  --warn:#9A6B12; --warn-bg:#F9F1DD;
+  --info:#2C5A8F; --info-bg:#EAF1F8;
+  --gray-bg:#F1EDE4;
+  --serif:"Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif;
+  --sans:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--paper);
+  background-image:repeating-linear-gradient(0deg,transparent 0 31px,rgba(120,100,70,.025) 31px 32px);}
+.app{display:flex;height:100vh;overflow:hidden}
+
+/* ============ 侧边栏 ============ */
+.sidebar{width:216px;flex-shrink:0;background:var(--ink);color:#D8CFC0;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;padding:20px 18px 16px;border-bottom:1px solid rgba(216,207,192,.12)}
+.seal-logo{width:38px;height:38px;border:2px solid var(--seal);border-radius:6px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-size:21px;font-weight:700;color:var(--seal);background:#2A231D;
+  box-shadow:inset 0 0 0 1px rgba(180,35,24,.35);position:relative}
+.seal-logo::after{content:"";position:absolute;inset:2px;border:1px solid rgba(180,35,24,.25);border-radius:3px}
+.brand-t{line-height:1.3}
+.brand-t b{display:block;font-family:var(--serif);font-size:15px;letter-spacing:1px;color:#F3EBDD}
+.brand-t span{font-size:11px;color:#9A8F7E;letter-spacing:2px}
+.nav{padding:12px 10px;flex:1}
+.nav-label{font-size:11px;color:#7E7466;letter-spacing:3px;padding:10px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:6px;cursor:pointer;color:#B7AD9C;
+  transition:background .15s,color .15s;margin-bottom:2px;position:relative}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.nav-item:hover{background:rgba(216,207,192,.07);color:#EDE5D6}
+.nav-item.active{background:rgba(180,35,24,.18);color:#F5EDDF}
+.nav-item.active::before{content:"";position:absolute;left:-10px;top:8px;bottom:8px;width:3px;background:var(--seal);border-radius:0 2px 2px 0}
+.nav-item .cnt{margin-left:auto;font-size:11px;background:rgba(180,35,24,.85);color:#FBEDEA;border-radius:8px;padding:1px 7px;font-family:var(--mono)}
+.side-foot{padding:14px 16px;border-top:1px solid rgba(216,207,192,.12);font-size:11px;color:#7E7466;line-height:1.7}
+.side-foot b{color:#B7AD9C;font-weight:500}
+
+/* ============ 主区 ============ */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:52px;flex-shrink:0;background:var(--card);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:12px;padding:0 22px}
+.crumb{font-family:var(--serif);font-size:15px;letter-spacing:.5px}
+.crumb em{font-style:normal;color:var(--ink3);font-size:12px;font-family:var(--sans);margin-left:10px}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+.env-pill{font-size:11px;letter-spacing:1px;padding:3px 10px;border:1px solid var(--line2);border-radius:12px;color:var(--ink2);font-family:var(--mono)}
+.mode-pill{font-size:11px;letter-spacing:1px;padding:3px 10px;border-radius:12px;background:var(--warn-bg);color:var(--warn);border:1px solid #E5D3A1;cursor:pointer}
+.mode-pill:hover{filter:brightness(.97)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#EDE5D6;display:flex;align-items:center;justify-content:center;font-size:12px;font-family:var(--serif)}
+.content{flex:1;overflow-y:auto;padding:22px 24px 40px}
+.view{display:none;animation:fadeIn .25s ease}
+.view.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ============ 通用卡片 ============ */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px}
+.card-h{display:flex;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)}
+.card-h h3{font-family:var(--serif);font-size:14px;letter-spacing:.5px;font-weight:600}
+.card-h .sub{font-size:11px;color:var(--ink3);margin-left:10px}
+.card-h .aux{margin-left:auto;display:flex;gap:8px;align-items:center}
+.card-b{padding:16px 18px}
+
+/* ============ 看板 ============ */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:15px 18px 13px;position:relative;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(60,45,25,.08)}
+.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--kpi-c,var(--seal));opacity:.85}
+.kpi .lb{font-size:11px;color:var(--ink3);letter-spacing:1px}
+.kpi .num{font-family:var(--serif);font-size:30px;font-weight:700;margin:5px 0 3px;font-variant-numeric:tabular-nums}
+.kpi .num small{font-size:15px;color:var(--ink3);font-weight:400}
+.kpi .delta{font-size:11px;color:var(--ink2)}
+.kpi .delta b{font-weight:600;color:var(--ok)}
+.kpi .delta b.down{color:var(--seal)}
+.charts{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--ink2)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12px;padding:4px 12px;border:1px solid var(--line2);border-radius:14px;background:var(--card);cursor:pointer;color:var(--ink2);transition:all .15s}
+.chip:hover{border-color:var(--ink3)}
+.chip.on{background:var(--ink);color:#F3EBDD;border-color:var(--ink)}
+
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:500;color:var(--ink3);text-align:left;letter-spacing:1px;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:var(--ink)}
+td{padding:11px 12px;border-bottom:1px solid #EFE9DC;font-variant-numeric:tabular-nums;vertical-align:middle}
+tbody tr{transition:background .12s}
+tr.clickable{cursor:pointer}
+tr.clickable:hover{background:var(--card2)}
+.mono{font-family:var(--mono);font-size:12px}
+.amount{font-family:var(--serif);font-weight:600}
+
+.stamp{display:inline-block;font-size:11px;letter-spacing:2px;padding:2px 9px 2px 11px;border-radius:3px;font-weight:500;white-space:nowrap}
+.stamp.s-esc{color:var(--seal);border:1.5px solid var(--seal);box-shadow:inset 0 0 0 1px rgba(180,35,24,.18);background:var(--seal-bg)}
+.stamp.s-pass{color:var(--ok);border:1.5px solid var(--ok);box-shadow:inset 0 0 0 1px rgba(47,125,91,.18);background:var(--ok-bg)}
+.stamp.s-adv{color:var(--warn);border:1.5px solid var(--warn);box-shadow:inset 0 0 0 1px rgba(154,107,18,.18);background:var(--warn-bg)}
+.stamp.s-rej{color:#6E120C;border:1.5px solid #6E120C;box-shadow:inset 0 0 0 1px rgba(110,18,12,.18);background:#F6E4E1}
+.stamp.s-run{color:var(--info);border:1.5px solid var(--info);box-shadow:inset 0 0 0 1px rgba(44,90,143,.15);background:var(--info-bg)}
+.conf-bar{display:inline-flex;align-items:center;gap:7px}
+.conf-bar .tr{width:44px;height:4px;background:var(--gray-bg);border-radius:2px;overflow:hidden}
+.conf-bar .tr i{display:block;height:100%;background:var(--ink2)}
+.conf-bar b{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--ink2)}
+
+/* ============ 报告视图 ============ */
+.report-grid{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
+.report-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:16px;justify-content:space-between}
+.report-head h2{font-family:var(--serif);font-size:19px;letter-spacing:.5px}
+.report-head .meta{font-size:12px;color:var(--ink2);margin-top:5px;line-height:1.8}
+.report-head .meta .mono{color:var(--ink)}
+.back-btn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);cursor:pointer;padding:5px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--card);margin-bottom:14px}
+.back-btn:hover{color:var(--ink);border-color:var(--ink3)}
+.finding{border:1px solid var(--line);border-radius:8px;background:var(--card);margin-bottom:12px;overflow:hidden}
+.finding-h{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--card2);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.finding-h .code{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.finding-h .engine-tag{margin-left:auto;font-size:10px;letter-spacing:1px;color:var(--ink3);border:1px solid var(--line2);border-radius:10px;padding:1px 8px}
+.sev{font-size:11px;padding:1px 8px;border-radius:3px}
+.sev.critical,.sev.major{background:var(--seal-bg);color:var(--seal)}
+.sev.minor{background:var(--warn-bg);color:var(--warn)}
+.sev.info{background:var(--info-bg);color:var(--info)}
+.finding-b{padding:12px 14px}
+.finding-b p{line-height:1.75;color:var(--ink)}
+.evidence{margin-top:10px;border-left:2px solid var(--line2);padding:2px 0 2px 12px}
+.evidence .ev-row{font-size:12px;color:var(--ink2);line-height:1.8}
+.evidence .ev-row b{color:var(--ink);font-weight:500}
+.ev-q{font-family:var(--serif);color:var(--ink);background:var(--card2);border:1px dashed var(--line2);border-radius:4px;padding:5px 10px;margin:4px 0;display:block}
+.citation{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--ink2);flex-wrap:wrap}
+.citation svg{width:14px;height:14px;color:var(--seal);flex-shrink:0}
+.citation .cpath{font-family:var(--serif);color:var(--seal-dk);font-weight:600}
+.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.btn{font-size:13px;padding:8px 18px;border-radius:6px;border:1px solid var(--line2);background:var(--card);cursor:pointer;color:var(--ink);font-family:var(--sans);transition:all .15s;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{border-color:var(--ink3)}
+.btn.primary{background:var(--ink);color:#F3EBDD;border-color:var(--ink)}
+.btn.primary:hover{background:#38302A}
+.btn.seal{background:var(--seal);color:#FBEDEA;border-color:var(--seal)}
+.btn.seal:hover{background:var(--seal-dk)}
+.btn.ghost{border-style:dashed}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn svg{width:14px;height:14px}
+
+.seal-circle{width:96px;height:96px;border-radius:50%;border:3px solid var(--seal);display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--seal);position:relative;transform:rotate(-12deg);opacity:0;flex-shrink:0;margin-top:6px}
+.seal-circle::before{content:"";position:absolute;inset:5px;border:1px solid var(--seal);border-radius:50%}
+.seal-circle .sc-t{font-family:var(--serif);font-size:15px;font-weight:700;letter-spacing:4px;margin-left:4px}
+.seal-circle .sc-s{font-family:var(--mono);font-size:9px;letter-spacing:1px;margin-top:3px}
+.seal-circle.stamp-in{animation:stampIn .5s cubic-bezier(.2,1.6,.4,1) .4s forwards}
+@keyframes stampIn{0%{opacity:0;transform:rotate(-12deg) scale(1.8)}60%{opacity:.92;transform:rotate(-12deg) scale(.96)}100%{opacity:.88;transform:rotate(-12deg) scale(1)}}
+
+.info-list{font-size:12px;line-height:2.1}
+.info-list .row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-bottom:1px dashed #EDE6D8}
+.info-list .row span{color:var(--ink3);flex-shrink:0}
+.info-list .row b{font-weight:500;text-align:right}
+.tl{position:relative;padding-left:18px;margin-top:4px}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:var(--line2)}
+.tl-item{position:relative;padding:0 0 16px 8px}
+.tl-item::before{content:"";position:absolute;left:-17px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--card);border:2px solid var(--ink3)}
+.tl-item.hot::before{border-color:var(--seal);background:var(--seal)}
+.tl-item.done::before{border-color:var(--ok);background:var(--ok)}
+.tl-item.now::before{border-color:var(--info);background:var(--info);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 4px rgba(44,90,143,.15)}}
+.tl-item .t1{font-size:11px;color:var(--ink3);font-family:var(--mono)}
+.tl-item .t2{font-size:12px;margin-top:2px;line-height:1.6}
+
+/* 运行中任务 */
+.run-box{border:1px solid var(--line);border-radius:8px;background:var(--card);padding:16px 18px;margin-bottom:12px}
+.run-steps{display:flex;flex-direction:column;gap:0;margin-top:10px}
+.run-step{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px;color:var(--ink3)}
+.run-step .dot{width:10px;height:10px;border-radius:50%;background:var(--gray-bg);border:1.5px solid var(--line2);flex-shrink:0}
+.run-step.done{color:var(--ink2)}
+.run-step.done .dot{background:var(--ok);border-color:var(--ok)}
+.run-step.now{color:var(--info);font-weight:500}
+.run-step.now .dot{border-color:var(--info);animation:pulse 1.2s infinite}
+.spinner{width:13px;height:13px;border:2px solid var(--info-bg);border-top-color:var(--info);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============ 路由配置 ============ */
+.flow-tabs{display:flex;gap:2px;background:var(--gray-bg);border-radius:8px;padding:3px;width:fit-content}
+.flow-tabs .ft{font-size:12px;padding:6px 16px;border-radius:6px;cursor:pointer;color:var(--ink2);transition:all .15s}
+.flow-tabs .ft.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(60,45,25,.12);font-weight:500}
+.seg{display:flex;border:1px solid var(--line2);border-radius:7px;overflow:hidden}
+.seg .sg{font-size:12px;padding:6px 13px;cursor:pointer;color:var(--ink2);border-right:1px solid var(--line2);transition:all .15s;background:var(--card)}
+.seg .sg:last-child{border-right:none}
+.seg .sg.on{background:var(--seal);color:#FBEDEA}
+.cfg-row{display:flex;gap:22px;align-items:flex-end;flex-wrap:wrap}
+.field .fl{font-size:11px;color:var(--ink3);letter-spacing:1px;display:block;margin-bottom:5px}
+.field input[type=text],.field input[type=number],.field select{font-size:13px;padding:7px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--card);color:var(--ink);font-family:var(--mono);width:120px}
+.field select{width:auto;min-width:120px;font-family:var(--sans)}
+.field input:focus,.field select:focus{outline:none;border-color:var(--ink3)}
+.icon-btn{width:26px;height:26px;border:1px solid var(--line2);border-radius:5px;background:var(--card);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:var(--ink3);transition:all .15s}
+.icon-btn:hover{color:var(--seal);border-color:var(--seal)}
+.icon-btn svg{width:13px;height:13px}
+.pcodes{display:flex;flex-wrap:wrap;gap:5px;max-width:360px}
+.pc{font-size:10.5px;font-family:var(--mono);padding:2px 7px;border:1px solid var(--line2);border-radius:10px;color:var(--ink3);cursor:pointer;transition:all .12s;user-select:none}
+.pc:hover{border-color:var(--ink3);color:var(--ink2)}
+.pc.on{background:var(--ink);border-color:var(--ink);color:#F3EBDD}
+.pc.static{cursor:default}
+.pc.static:hover{border-color:var(--line2);color:var(--ink3)}
+.add-form{background:var(--card2);border:1px dashed var(--line2);border-radius:8px;padding:14px 16px;margin-top:14px}
+.add-form .af-title{font-size:12px;font-weight:500;color:var(--ink2);margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.add-form .af-title svg{width:13px;height:13px;color:var(--seal)}
+.hint{font-size:11px;color:var(--ink3);line-height:1.7;margin-top:8px}
+.ver-tag{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+
+/* ============ 知识库 / 规则库 ============ */
+.doc-title{font-family:var(--serif);font-weight:600}
+.st-tag{font-size:11px;padding:1px 9px;border-radius:3px;letter-spacing:1px}
+.st-tag.active{background:var(--ok-bg);color:var(--ok)}
+.st-tag.archived{background:var(--gray-bg);color:var(--ink3)}
+.st-tag.draft{background:var(--warn-bg);color:var(--warn)}
+.search-debug{display:flex;gap:8px;margin-bottom:12px}
+.search-debug input{flex:1;font-size:13px;padding:8px 12px;border:1px solid var(--line2);border-radius:6px;background:var(--card)}
+.search-debug input:focus{outline:none;border-color:var(--ink3)}
+.chunk{border:1px solid var(--line);border-radius:7px;padding:10px 13px;margin-bottom:9px;background:var(--card)}
+.chunk .c-head{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.chunk .c-path{font-family:var(--serif);font-size:12px;font-weight:600;color:var(--seal-dk)}
+.chunk .c-doc{font-size:11px;color:var(--ink3)}
+.chunk .c-score{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ok)}
+.chunk p{font-size:12px;line-height:1.8;color:var(--ink2)}
+.chunk p mark{background:#F5E3B0;color:var(--ink);padding:0 2px;border-radius:2px}
+/* 开关 */
+.switch{position:relative;width:34px;height:19px;display:inline-block;cursor:pointer;vertical-align:middle}
+.switch input{opacity:0;width:0;height:0}
+.switch .sl{position:absolute;inset:0;background:var(--line2);border-radius:10px;transition:.2s}
+.switch .sl::before{content:"";position:absolute;width:13px;height:13px;left:3px;top:2.4px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.switch input:checked + .sl{background:var(--ok)}
+.switch input:checked + .sl::before{transform:translateX(15px)}
+
+/* ============ 弹窗 ============ */
+#modal-mask{position:fixed;inset:0;background:rgba(24,16,10,.45);display:none;align-items:center;justify-content:center;z-index:90}
+#modal-mask.show{display:flex}
+.modal{background:var(--card);border-radius:12px;width:520px;max-width:92vw;max-height:82vh;overflow-y:auto;padding:24px;animation:fadeIn .2s ease;box-shadow:0 12px 40px rgba(20,12,6,.3)}
+.modal h4{font-family:var(--serif);font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.modal p{font-size:13px;color:var(--ink2);line-height:1.8;margin-bottom:18px}
+.modal .m-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.modal textarea{width:100%;font-family:var(--mono);font-size:12px;line-height:1.7;padding:10px 12px;border:1px solid var(--line2);border-radius:6px;background:var(--card2);resize:vertical;min-height:180px;color:var(--ink)}
+.modal textarea:focus{outline:none;border-color:var(--ink3)}
+.modal .f-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.modal .f-grid .field input,.modal .f-grid .field select{width:100%}
+.dsl-pre{font-family:var(--mono);font-size:11.5px;line-height:1.7;background:var(--ink);color:#D8CFC0;border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre}
+.dsl-pre .k{color:#E8A87C}.dsl-pre .s{color:#9FD3A8}.dsl-pre .n{color:#8FBCE6}
+
+#toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#F3EBDD;
+  padding:10px 22px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:all .3s;z-index:99;box-shadow:0 6px 24px rgba(20,12,6,.25);max-width:80vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast b{color:#F0B7AE;font-weight:500}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.charts{grid-template-columns:1fr}.report-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 侧边栏 -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="seal-logo">审</div>
+      <div class="brand-t"><b>数字人审核</b><span>AI AUDITOR</span></div>
+    </div>
+    <nav class="nav">
+      <div class="nav-label">运营工作台</div>
+      <div class="nav-item active" data-view="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg>
+        审核看板
+      </div>
+      <div class="nav-item" data-view="report">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></svg>
+        审核报告 <span class="cnt" id="nav-pending">2</span>
+      </div>
+      <div class="nav-item" data-view="route">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="5" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M6 7.5V13a4 4 0 0 0 4 4h5.5"/></svg>
+        路由与策略
+      </div>
+      <div class="nav-label" style="margin-top:14px">知识资产</div>
+      <div class="nav-item" data-view="kb">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/><path d="M9 7h6M9 11h6"/></svg>
+        制度知识库 <span class="cnt" id="nav-kb">4</span>
+      </div>
+      <div class="nav-item" data-view="rules">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
+        规则库 <span class="cnt" id="nav-rules">8</span>
+      </div>
+    </nav>
+    <div class="side-foot">
+      影子模式运行中<br>引擎版本 <b>v0.4.2-p0</b><br>模型网关 <b>NewAPI · 正常</b>
+    </div>
+  </aside>
+
+  <!-- 主区 -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb" id="crumb">审核看板<em>影子模式 · 数据仅用于比对评测</em></div>
+      <div class="top-right">
+        <span class="env-pill">沙箱环境</span>
+        <span class="mode-pill" id="mode-pill" title="点击进入路由与策略配置">半自动模式</span>
+        <div class="avatar">审</div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ========== 视图1：审核看板 ========== -->
+      <section class="view active" id="view-dashboard">
+        <div class="kpis">
+          <div class="kpi" style="--kpi-c:#B42318" data-goto="report"><div class="lb">累计审核单据（本月）</div><div class="num">3,842</div><div class="delta">环比 <b class="down">+18.4%</b> · 覆盖 4 个审批流</div></div>
+          <div class="kpi" style="--kpi-c:#2F7D5B" data-goto="route"><div class="lb">自动处理率</div><div class="num">38.6<small>%</small></div><div class="delta">较上周 <b>+2.1pt</b> · 目标 40% · 点击调整策略</div></div>
+          <div class="kpi" style="--kpi-c:#9A6B12" data-goto="report"><div class="lb">人机一致率（影子比对）</div><div class="num">91.3<small>%</small></div><div class="delta">评测门槛 85% · <b>已达标</b> · 点击查看报告</div></div>
+          <div class="kpi" style="--kpi-c:#2C5A8F" data-goto="report"><div class="lb">端到端平均耗时</div><div class="num">14.2<small>s</small></div><div class="delta">P95 <b>27.8s</b> · 预算 30s</div></div>
+        </div>
+
+        <div class="charts">
+          <div class="card">
+            <div class="card-h"><h3>审核量与转人工趋势</h3><span class="sub">近 14 天</span>
+              <div class="aux legend"><span><i style="background:#201A15"></i>审核总量</span><span><i style="background:#B42318"></i>转人工</span></div>
+            </div>
+            <div class="card-b"><svg id="chart-trend" viewBox="0 0 640 210" width="100%"></svg></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h3>问题类型分布</h3><span class="sub">本月</span></div>
+            <div class="card-b" style="display:flex;align-items:center;gap:20px">
+              <svg id="chart-donut" viewBox="0 0 160 160" width="140px" style="flex-shrink:0"></svg>
+              <div id="donut-legend" style="flex:1"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>审核任务</h3><span class="sub">点击行查看数字人审核报告</span>
+            <div class="aux"><input id="task-search" type="text" placeholder="搜索单号…" style="font-size:12px;padding:5px 10px;border:1px solid var(--line2);border-radius:6px;background:var(--card);width:150px"></div>
+          </div>
+          <div style="padding:12px 18px 0" class="chips" id="task-chips">
+            <span class="chip on" data-f="all">全部 10</span>
+            <span class="chip" data-f="running">审核中 2</span>
+            <span class="chip" data-f="pass">已通过 4</span>
+            <span class="chip" data-f="advisory">建议附单 2</span>
+            <span class="chip" data-f="escalate">已转人工 2</span>
+            <span class="chip" data-f="reject">已驳回 1</span>
+          </div>
+          <div class="card-b" style="padding-top:10px">
+            <div id="cat-pill-row" style="display:none;margin-bottom:10px"></div>
+            <table>
+              <thead><tr><th>单据号</th><th>审批流</th><th data-sort="amount">金额</th><th>当前节点</th><th>数字人结论</th><th data-sort="conf">置信度</th><th>问题数</th><th>耗时</th></tr></thead>
+              <tbody id="task-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 视图2：审核报告（动态渲染） ========== -->
+      <section class="view" id="view-report"></section>
+
+      <!-- ========== 视图3：路由配置 ========== -->
+      <section class="view" id="view-route">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h">
+            <h3>审批流策略</h3>
+            <div class="flow-tabs" id="flow-tabs" style="margin-left:14px"></div>
+            <div class="aux"><span class="ver-tag" id="cfg-ver"></span><button class="btn primary" id="btn-save-cfg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+              保存配置</button></div>
+          </div>
+          <div class="card-b">
+            <div class="cfg-row">
+              <div class="field"><span class="fl">运行模式</span>
+                <div class="seg" id="mode-seg">
+                  <span class="sg" data-m="shadow">影子</span>
+                  <span class="sg" data-m="advisory">建议</span>
+                  <span class="sg" data-m="semi_auto">半自动</span>
+                  <span class="sg" data-m="full_auto">全自动</span>
+                </div>
+              </div>
+              <div class="field"><span class="fl">自动通过金额上限（元）</span><input type="number" id="cfg-threshold"></div>
+              <div class="field"><span class="fl">自动通过抽检比例</span><input type="number" id="cfg-sample" step="0.5" style="width:90px"><span style="font-size:12px;color:var(--ink3);margin-left:6px">%</span></div>
+              <div class="field"><span class="fl">回写能力档</span>
+                <select id="cfg-cap"><option value="FULL">FULL（评论/打回/加签）</option><option value="COMMENT_ONLY">COMMENT_ONLY（仅评论）</option><option value="NONE">NONE（IM 推送兜底）</option></select>
+              </div>
+            </div>
+            <div class="hint" id="mode-hint"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>转人工路由表</h3><span class="sub" id="route-sub"></span></div>
+          <div class="card-b" style="padding-top:6px">
+            <table class="rules-table">
+              <thead><tr><th style="width:44%">命中问题码</th><th>最低严重度</th><th>路由节点</th><th>处置动作</th><th>IM 通知</th><th></th></tr></thead>
+              <tbody id="route-tbody"></tbody>
+            </table>
+
+            <div class="add-form">
+              <div class="af-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新增路由规则</div>
+              <div style="margin-bottom:10px"><span style="font-size:11px;color:var(--ink3);display:block;margin-bottom:6px">点击选择问题码（可多选）</span><div class="pcodes" id="add-pcodes"></div></div>
+              <div class="cfg-row">
+                <div class="field"><span class="fl">最低严重度</span>
+                  <select id="add-sev"><option value="info">info</option><option value="minor">minor</option><option value="major" selected>major</option><option value="critical">critical</option></select>
+                </div>
+                <div class="field"><span class="fl">路由节点</span>
+                  <select id="add-node"></select>
+                </div>
+                <div class="field"><span class="fl">处置动作</span>
+                  <select id="add-action"><option value="REJECT_TO_NODE">REJECT_TO_NODE（打回该节点）</option><option value="ESCALATE">ESCALATE（转办/加签）</option><option value="COMMENT">COMMENT（附加意见）</option></select>
+                </div>
+                <div class="field"><span class="fl">IM 通知</span>
+                  <select id="add-notify"><option value="1">推送</option><option value="0">不推送</option></select>
+                </div>
+                <button class="btn seal" id="btn-add-rule" style="height:34px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>添加规则</button>
+              </div>
+            </div>
+            <div class="hint">路由约束：目标节点必须存在于该审批流实例的可达节点集（flow_profile.node_definitions），否则保存时校验失败并回退到 $current_node。问题码枚举详见详细设计 §7.3。</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 视图4：制度知识库 ========== -->
+      <section class="view" id="view-kb">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-h"><h3>制度文档</h3><span class="sub">检索时按单据提交日过滤生效版本</span>
+            <div class="aux"><button class="btn primary" id="btn-upload-doc">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>上传制度</button></div>
+          </div>
+          <div class="card-b" style="padding-top:6px">
+            <table>
+              <thead><tr><th>文档</th><th>版本</th><th>生效期</th><th>切片数</th><th>适用流</th><th>状态</th><th></th></tr></thead>
+              <tbody id="kb-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>检索调试</h3><span class="sub">混合检索（向量 + 关键词 RRF）· S3 步骤实际调用入口</span></div>
+          <div class="card-b">
+            <div class="search-debug">
+              <input id="kb-q" type="text" placeholder="输入检索问题，如：住宿标准是多少 / 超期报销怎么办 / 供应商黑名单" value="一线城市住宿标准">
+              <button class="btn seal" id="btn-kb-search" style="height:36px">检索</button>
+            </div>
+            <div id="kb-results"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 视图5：规则库 ========== -->
+      <section class="view" id="view-rules">
+        <div class="card">
+          <div class="card-h"><h3>规则库</h3><span class="sub">DSL 配置化 · 变更产生新版本号，历史可回溯</span>
+            <div class="aux"><button class="btn primary" id="btn-new-rule">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新建规则</button></div>
+          </div>
+          <div style="padding:12px 18px 0" class="chips" id="rule-chips">
+            <span class="chip on" data-f="all">全部</span>
+            <span class="chip" data-f="expense">差旅报销</span>
+            <span class="chip" data-f="purchase">采购申请</span>
+            <span class="chip" data-f="contract">合同会签</span>
+            <span class="chip" data-f="seal">用章申请</span>
+          </div>
+          <div class="card-b" style="padding-top:10px">
+            <table>
+              <thead><tr><th>规则码</th><th>规则名称</th><th>审批流</th><th>问题码</th><th>严重度</th><th>启用</th><th></th></tr></thead>
+              <tbody id="rules-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="modal-mask"><div class="modal" id="modal-box"></div></div>
+
+<script>
+/* =========================================================
+   mock 数据
+========================================================= */
+const FLOWS = {
+  expense:{ name:"差旅报销", code:"expense_reimburse", mode:"semi_auto", threshold:5000, sample:5, cap:"COMMENT_ONLY", version:3,
+    nodes:[["applicant","提单人"],["dept_mgr","部门经理"],["fin_manager","财务经理"],["compliance","合规岗"]],
+    rules:[
+      {codes:["MISSING_ATTACHMENT","MISSING_FIELD","INVOICE_MISMATCH","DATE_CONFLICT"],sev:"minor",node:"applicant",action:"REJECT_TO_NODE",notify:true},
+      {codes:["OVER_BUDGET","OVER_STANDARD"],sev:"major",node:"fin_manager",action:"ESCALATE",notify:true},
+      {codes:["POLICY_VIOLATION"],sev:"major",node:"compliance",action:"ESCALATE",notify:false},
+      {codes:["ENGINE_TIMEOUT","PREPROCESS_FAILED"],sev:"info",node:"$current_node",action:"COMMENT",notify:false}
+    ]},
+  purchase:{ name:"采购申请", code:"purchase_request", mode:"advisory", threshold:20000, sample:10, cap:"FULL", version:2,
+    nodes:[["applicant","提单人"],["purchaser","采购员"],["purch_mgr","采购经理"],["fin_manager","财务经理"],["compliance","合规岗"]],
+    rules:[
+      {codes:["MISSING_FIELD","MISSING_ATTACHMENT"],sev:"minor",node:"applicant",action:"REJECT_TO_NODE",notify:true},
+      {codes:["OVER_BUDGET"],sev:"major",node:"fin_manager",action:"ESCALATE",notify:true},
+      {codes:["BLACKLIST_HIT"],sev:"critical",node:"compliance",action:"REJECT_TO_NODE",notify:true},
+      {codes:["DUPLICATE_SUBMIT"],sev:"major",node:"purch_mgr",action:"ESCALATE",notify:true}
+    ]},
+  contract:{ name:"合同会签", code:"contract_review", mode:"shadow", threshold:100000, sample:0, cap:"FULL", version:1,
+    nodes:[["applicant","提单人"],["legal","法务"],["fin_manager","财务经理"],["compliance","合规岗"]],
+    rules:[
+      {codes:["MISSING_ATTACHMENT"],sev:"minor",node:"applicant",action:"REJECT_TO_NODE",notify:true},
+      {codes:["POLICY_VIOLATION"],sev:"critical",node:"legal",action:"ESCALATE",notify:true},
+      {codes:["AMOUNT_CONFLICT"],sev:"major",node:"fin_manager",action:"ESCALATE",notify:false}
+    ]},
+  seal:{ name:"用章申请", code:"seal_apply", mode:"semi_auto", threshold:100000, sample:20, cap:"COMMENT_ONLY", version:2,
+    nodes:[["applicant","提单人"],["office","行政岗"],["dept_mgr","部门经理"]],
+    rules:[
+      {codes:["MISSING_FIELD"],sev:"minor",node:"applicant",action:"REJECT_TO_NODE",notify:true},
+      {codes:["DUPLICATE_SUBMIT","OVERDUE_SUBMIT"],sev:"major",node:"office",action:"ESCALATE",notify:false}
+    ]}
+};
+let currentFlow = "expense";
+
+const TASKS = [
+ {id:"AP202609280012",fk:"expense",flow:"差旅报销",amount:8600,node:"fin_review",level:"escalate",conf:0.93,nprob:2,cost:"11.2s",route:"fin_manager · 加签",runStep:99,cat:"标准超标"},
+ {id:"AP202609280011",fk:"purchase",flow:"采购申请",amount:128000,node:"purchasing",level:"running",conf:null,nprob:0,cost:"—",route:"",runStep:1,cat:null},
+ {id:"AP202609280009",fk:"expense",flow:"差旅报销",amount:2380,node:"auto",level:"pass",conf:0.96,nprob:0,cost:"9.8s",route:"自动通过 · 未抽检",runStep:99,cat:null},
+ {id:"AP202609280008",fk:"contract",flow:"合同会签",amount:0,node:"legal",level:"advisory",conf:0.81,nprob:1,cost:"16.4s",route:"意见附加 · 继续流转",runStep:99,cat:"一致性冲突"},
+ {id:"AP202609280007",fk:"expense",flow:"差旅报销",amount:4720,node:"auto",level:"pass",conf:0.91,nprob:0,cost:"12.6s",route:"自动通过 · 已抽检",runStep:99,cat:null},
+ {id:"AP202609280005",fk:"seal",flow:"用章申请",amount:0,node:"office",level:"reject",conf:0.97,nprob:1,cost:"8.9s",route:"打回提单人",runStep:99,cat:"其他"},
+ {id:"AP202609280004",fk:"purchase",flow:"采购申请",amount:45600,node:"fin_review",level:"escalate",conf:0.88,nprob:1,cost:"18.1s",route:"fin_manager · 转办",runStep:99,cat:"预算超支"},
+ {id:"AP202609280003",fk:"expense",flow:"差旅报销",amount:1320,node:"dept_mgr",level:"advisory",conf:0.72,nprob:1,cost:"13.7s",route:"意见附加 · 继续流转",runStep:99,cat:"一致性冲突"},
+ {id:"AP202609280002",fk:"contract",flow:"合同会签",amount:860000,node:"pre_check",level:"running",conf:null,nprob:0,cost:"—",route:"",runStep:2,cat:null},
+ {id:"AP202609280001",fk:"expense",flow:"差旅报销",amount:980,node:"auto",level:"pass",conf:0.94,nprob:0,cost:"7.5s",route:"自动通过 · 未抽检",runStep:99,cat:null},
+];
+
+const PROBLEM_DIST=[["材料问题",34,"#B42318"],["一致性冲突",22,"#9A6B12"],["标准超标",18,"#2C5A8F"],["预算超支",11,"#2F7D5B"],["其他",15,"#8A7F70"]];
+
+const KB_DOCS=[
+ {code:"doc-12",title:"差旅费管理办法",ver:3,from:"2026-01-01",to:null,chunks:86,scope:"expense",status:"active",
+  owner:"财务部"},
+ {code:"doc-07",title:"采购管理办法",ver:5,from:"2025-06-01",to:null,chunks:142,scope:"purchase",status:"active",owner:"采购部"},
+ {code:"doc-21",title:"合同管理制度",ver:2,from:"2026-03-15",to:"2026-12-31",chunks:97,scope:"contract",status:"active",owner:"法务部"},
+ {code:"doc-30",title:"印章及用印管理规定",ver:1,from:"2025-01-01",to:null,chunks:41,scope:"seal",status:"active",owner:"行政部"},
+ {code:"doc-12",title:"差旅费管理办法",ver:2,from:"2024-01-01",to:"2025-12-31",chunks:78,scope:"expense",status:"archived",owner:"财务部"}
+];
+const KB_CHUNKS=[
+ {doc:"差旅费管理办法 v3",path:"第8条 第2款",text:"员工住宿标准：一线城市（北京、上海、广州、深圳）正处级及以下人员 ¥500 元/晚，超标准部分原则上由个人自理，特殊情况需事前审批。"},
+ {doc:"差旅费管理办法 v3",path:"第8条 第3款",text:"二线城市住宿标准 ¥400 元/晚，其他地区 ¥350 元/晚。同一次出差跨地区的，按住宿发生地分别适用标准。"},
+ {doc:"差旅费管理办法 v3",path:"第15条 第1款",text:"员工应在出差返回后 30 日内提交报销申请，超期 90 日以上的，需附加书面说明并经部门负责人审批。"},
+ {doc:"采购管理办法 v5",path:"第12条 第4款",text:"单笔采购金额超过 5 万元的，须从合格供应商名录中选择供应商；列入黑名单的供应商不得参与询价与投标。"},
+ {doc:"采购管理办法 v5",path:"第9条 第2款",text:"采购申请须对应部门年度预算科目，预算余额不足的，应先履行预算调整审批流程。"},
+ {doc:"合同管理制度 v2",path:"第5条 第1款",text:"合同金额、付款条款与审批通过的报价单不一致的，法务有权退回重签，并追究相关责任人。"},
+ {doc:"印章及用印管理规定 v1",path:"第6条 第2款",text:"同一用印事项 7 日内重复申请的，系统应予以拦截并提示行政岗人工确认。"}
+];
+
+const RULES=[
+ {fk:"expense",code:"travel_hotel_cap",name:"住宿标准上限",problem:"OVER_STANDARD",sev:"major",enabled:true,
+  dsl:{rule_code:"travel_hotel_cap",when:{op:"and",clauses:[{op:"eq",left:"$form.type",right:"差旅报销"},{op:"gt",left:"$attachment.ocr.avg_hotel_price",right:"$std.hotel_cap"}]},then:{problem_code:"OVER_STANDARD",severity:"major",message:"住宿单价 {0} 元/晚超过标准 {1} 元/晚",message_args:["$attachment.ocr.avg_hotel_price","$std.hotel_cap"],route_hint:"fin_manager"}}},
+ {fk:"expense",code:"trip_overdue",name:"报销超期校验",problem:"OVERDUE_SUBMIT",sev:"minor",enabled:true,
+  dsl:{rule_code:"trip_overdue",when:{op:"gt",left:{fn:"days_between",args:["$ctx.today","$form.trip_end"]},right:90},then:{problem_code:"OVERDUE_SUBMIT",severity:"minor",message:"报销提交超期 {0} 天，需附加书面说明",message_args:[{fn:"days_between",args:["$ctx.today","$form.trip_end"]}],route_hint:"dept_mgr"}}},
+ {fk:"expense",code:"dup_7d",name:"7天重复提交",problem:"DUPLICATE_SUBMIT",sev:"major",enabled:true,
+  dsl:{rule_code:"dup_7d",when:{op:"truthy",left:{fn:"duplicate_fingerprint",args:["$form"]}},then:{problem_code:"DUPLICATE_SUBMIT",severity:"major",message:"近 7 天存在同人同金额单据",route_hint:"fin_manager"}}},
+ {fk:"expense",code:"missing_fields",name:"必填字段完整性",problem:"MISSING_FIELD",sev:"minor",enabled:true,
+  dsl:{rule_code:"missing_fields",when:{op:"any_empty",left:["$form.trip_reason","$form.trip_range","$form.cost_center"]},then:{problem_code:"MISSING_FIELD",severity:"minor",message:"必填字段缺失：{0}",message_args:["$ctx.empty_fields"],route_hint:"applicant"}}},
+ {fk:"purchase",code:"budget_check",name:"预算余额校验",problem:"OVER_BUDGET",sev:"major",enabled:true,
+  dsl:{rule_code:"budget_check",when:{op:"gt",left:"$form.amount",right:{fn:"budget_balance",args:["$form.dept","$form.subject","$ctx.quarter"]}},then:{problem_code:"OVER_BUDGET",severity:"major",message:"超出部门季度预算余额",route_hint:"fin_manager"}}},
+ {fk:"purchase",code:"supplier_blacklist",name:"供应商黑名单",problem:"BLACKLIST_HIT",sev:"critical",enabled:true,
+  dsl:{rule_code:"supplier_blacklist",when:{op:"in",left:"$form.supplier_name",right:"$std.supplier_blacklist"},then:{problem_code:"BLACKLIST_HIT",severity:"critical",message:"供应商在黑名单中",route_hint:"compliance"}}},
+ {fk:"purchase",code:"dup_po",name:"重复采购申请",problem:"DUPLICATE_SUBMIT",sev:"major",enabled:false,
+  dsl:{rule_code:"dup_po",when:{op:"truthy",left:{fn:"duplicate_fingerprint",args:["$form"]}},then:{problem_code:"DUPLICATE_SUBMIT",severity:"major",message:"近 7 天存在相似采购申请",route_hint:"purch_mgr"}}},
+ {fk:"contract",code:"amount_match",name:"合同金额一致性",problem:"AMOUNT_CONFLICT",sev:"major",enabled:true,
+  dsl:{rule_code:"amount_match",when:{op:"neq",left:"$form.amount",right:"$attachment.ocr.contract_amount"},then:{problem_code:"AMOUNT_CONFLICT",severity:"major",message:"合同金额与报价单不一致",route_hint:"legal"}}},
+ {fk:"seal",code:"seal_freq",name:"同日高频用章",problem:"DUPLICATE_SUBMIT",sev:"minor",enabled:true,
+  dsl:{rule_code:"seal_freq",when:{op:"gt",left:{fn:"seal_count_today",args:["$form.applicant_id"]},right:3},then:{problem_code:"DUPLICATE_SUBMIT",severity:"minor",message:"当日用章申请超过 3 次",route_hint:"office"}}}
+];
+
+/* =========================================================
+   工具
+======================================================== */
+const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function toast(msg,hl){const t=$("#toast");t.innerHTML=hl?esc(msg).replace(new RegExp("("+esc(hl)+")","g"),"<b>$1</b>"):esc(msg);t.classList.add("show");clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove("show"),2800)}
+function openModal(html,w){const b=$("#modal-box");b.innerHTML=html;b.style.width=(w||520)+"px";$("#modal-mask").classList.add("show")}
+function closeModal(){$("#modal-mask").classList.remove("show")}
+function confirmDlg(title,text,cb){
+  openModal(`<h4>${esc(title)}</h4><p>${esc(text)}</p><div class="m-btns">
+    <button class="btn" onclick="closeModal()">取消</button>
+    <button class="btn seal" id="m-ok">确认</button></div>`);
+  $("#m-ok").onclick=()=>{closeModal();cb()};
+}
+$("#modal-mask").addEventListener("click",e=>{if(e.target.id==="modal-mask")closeModal()});
+const LEVEL_TXT={escalate:["已转人工","s-esc","转人工"],pass:["已通过","s-pass","通过"],advisory:["建议附单","s-adv","附意见"],reject:["已驳回","s-rej","驳回"],running:["审核中","s-run","审核中"]};
+const SEV_TXT={critical:"critical",major:"major",minor:"minor",info:"info"};
+const MODE_TXT={shadow:"影子模式",advisory:"建议模式",semi_auto:"半自动模式",full_auto:"全自动模式"};
+const MODE_HINT={
+ shadow:"影子模式：数字人只审不动，报告仅内部可见，与人工结果比对用于评测。",
+ advisory:"建议模式：审核报告以评论附加在审批单上，辅助实体人审核，不做任何处置动作。",
+ semi_auto:"半自动模式：规则全过 + LLM 高置信（≥0.90）+ 金额 ≤ 上限 的单据自动通过，其余按路由表处置；自动通过单据按抽检比例强制人工复核。",
+ full_auto:"全自动模式：白名单场景完全自动处置（需内审确认责任归属后开放）。"
+};
+
+/* =========================================================
+   视图切换
+======================================================== */
+const CRUMBS={
+ dashboard:["审核看板","影子模式 · 数据仅用于比对评测"],
+ report:["审核报告","数字人结论 · 人工复核处置"],
+ route:["路由与策略",""],
+ kb:["制度知识库","RAG 检索源 · 版本化生效期管理"],
+ rules:["规则库","DSL 配置 · 黄金用例回归"]
+};
+function switchView(name){
+  $$(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.view===name));
+  $$(".view").forEach(v=>v.classList.remove("active"));
+  $("#view-"+name).classList.add("active");
+  const c=CRUMBS[name];
+  $("#crumb").innerHTML=esc(c[0])+"<em>"+(name==="route"?FLOWS[currentFlow].name+" · "+FLOWS[currentFlow].code:c[1])+"</em>";
+  if(name==="report"&&currentReportId)renderReportTask(currentReportId);
+  if(name==="route")renderRouteCfg();
+  if(name==="kb")renderKB();
+  if(name==="rules")renderRules();
+}
+$$(".nav-item").forEach(n=>n.addEventListener("click",()=>switchView(n.dataset.view)));
+$$(".kpi[data-goto]").forEach(k=>k.addEventListener("click",()=>switchView(k.dataset.goto)));
+$("#mode-pill").addEventListener("click",()=>switchView("route"));
+
+/* =========================================================
+   看板：折线图 + 环形图
+======================================================== */
+(function(){
+  const audit=[142,156,138,171,163,90,72,158,167,174,161,95,81,178];
+  const escd=[31,28,25,36,30,12,9,29,33,35,28,14,11,34];
+  const days=["9/15","","9/17","","9/19","","9/21","","9/23","","9/25","","9/27",""];
+  const W=640,H=210,PL=36,PR=10,PT=14,PB=26,max=200;
+  const x=i=>PL+i*(W-PL-PR)/(audit.length-1), y=v=>PT+(H-PT-PB)*(1-v/max);
+  let g="";
+  for(let v=0;v<=max;v+=50)g+=`<line x1="${PL}" y1="${y(v)}" x2="${W-PR}" y2="${y(v)}" stroke="#E4DCCE" stroke-width="0.5" stroke-dasharray="${v===0?"":"3 4"}"/><text x="${PL-7}" y="${y(v)+3}" text-anchor="end" font-size="9" fill="#8A7F70" font-family="JetBrains Mono,monospace">${v}</text>`;
+  days.forEach((d,i)=>{if(d)g+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="9" fill="#8A7F70" font-family="JetBrains Mono,monospace">${d}</text>`});
+  const line=arr=>arr.map((v,i)=>`${x(i)},${y(v)}`).join(" ");
+  g+=`<path d="M${line(audit)}" fill="none" stroke="#201A15" stroke-width="1.8" stroke-linejoin="round"/>`;
+  g+=`<path d="M${line(escd)}" fill="none" stroke="#B42318" stroke-width="1.8" stroke-linejoin="round"/>`;
+  audit.forEach((v,i)=>{g+=`<circle cx="${x(i)}" cy="${y(v)}" r="2.2" fill="#FFFDF9" stroke="#201A15" stroke-width="1.2"/>`});
+  escd.forEach((v,i)=>{g+=`<circle cx="${x(i)}" cy="${y(v)}" r="2.2" fill="#FFFDF9" stroke="#B42318" stroke-width="1.2"/>`});
+  audit.forEach((v,i)=>{g+=`<circle cx="${x(i)}" cy="${y(v)}" r="9" fill="transparent" style="cursor:pointer"><title>${"9/"+(15+i)} · 审核 ${v} 单 · 转人工 ${escd[i]} 单（转人工率 ${(escd[i]/v*100).toFixed(0)}%）</title></circle>`});
+  const mi=escd.indexOf(Math.max(...escd));
+  g+=`<line x1="${x(mi)}" y1="${y(escd[mi])-6}" x2="${x(mi)}" y2="${PT-2}" stroke="#B42318" stroke-width="0.6" stroke-dasharray="2 3"/>`;
+  g+=`<text x="${x(mi)}" y="${PT-4}" text-anchor="middle" font-size="9" fill="#B42318" font-family="JetBrains Mono,monospace">峰值 ${escd[mi]}</text>`;
+  $("#chart-trend").innerHTML=g;
+})();
+(function(){
+  const R=58,C=2*Math.PI*R;let off=0,g="";
+  PROBLEM_DIST.forEach(([n,v,c])=>{
+    g+=`<circle cx="80" cy="80" r="${R}" fill="none" stroke="${c}" stroke-width="16" data-cat="${n}" style="cursor:pointer;transition:stroke-width .15s"
+      stroke-dasharray="${(v/100*C-2).toFixed(1)} ${(C-v/100*C+2).toFixed(1)}" stroke-dashoffset="${(-off).toFixed(1)}" transform="rotate(-90 80 80)"><title>点击筛选「${n}」类问题单据</title></circle>`;
+    off+=v/100*C;
+  });
+  g+=`<text x="80" y="76" text-anchor="middle" font-size="21" font-weight="700" fill="#201A15" font-family="Noto Serif SC,serif">217</text>
+      <text x="80" y="94" text-anchor="middle" font-size="9.5" fill="#8A7F70">问题单据</text>`;
+  $("#chart-donut").innerHTML=g;
+  $("#donut-legend").innerHTML=PROBLEM_DIST.map(([n,v,c])=>
+    `<div data-cat="${n}" style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed #EDE6D8;cursor:pointer" onmouseover="this.style.background='var(--card2)'" onmouseout="this.style.background=''">
+       <i style="width:9px;height:9px;border-radius:2px;background:${c};flex-shrink:0"></i>
+       <span style="color:var(--ink2)">${n}</span><b style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-weight:400">${v}%</b></div>`).join("");
+  $$("#chart-donut circle[data-cat]").forEach(c=>c.onclick=()=>filterByCat(c.dataset.cat));
+  $$("#donut-legend [data-cat]").forEach(l=>l.onclick=()=>filterByCat(l.dataset.cat));
+})();
+
+/* =========================================================
+   看板：任务表
+======================================================== */
+let taskFilter="all",taskKw="",taskCat=null,sortKey=null,sortDir=-1;
+$$("#view-dashboard th[data-sort]").forEach(th=>{
+  th.classList.add("sortable");th.dataset.label=th.textContent;
+  th.onclick=()=>{const k=th.dataset.sort;
+    if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1}
+    renderTasks();};
+});
+function filterByCat(n){
+  taskCat=taskCat===n?null:n;renderCatPill();renderTasks();
+  if(taskCat){toast("已筛选问题类型："+n+"（再次点击图表可取消）",n);
+    $("#task-chips").scrollIntoView({behavior:"smooth",block:"center"});}
+}
+function clearCatFilter(){taskCat=null;renderCatPill();renderTasks()}
+function renderCatPill(){
+  const el=$("#cat-pill-row");
+  if(!taskCat){el.style.display="none";return}
+  el.style.display="block";
+  el.innerHTML=`<span class="chip on" style="background:var(--seal);border-color:var(--seal)"
+    onclick="clearCatFilter()">问题类型：${taskCat} ✕ 清除筛选</span>`;
+}
+function renderTasks(){
+  let rows=TASKS.filter(t=>(taskFilter==="all"||t.level===taskFilter)&&(!taskCat||t.cat===taskCat)&&(!taskKw||t.id.includes(taskKw)));
+  if(sortKey)rows=[...rows].sort((a,b)=>((a[sortKey]??-1)-(b[sortKey]??-1))*sortDir);
+  $$("#view-dashboard th[data-sort]").forEach(th=>{
+    th.innerHTML=th.dataset.label+(sortKey===th.dataset.sort?(sortDir===-1?" ▼":" ▲"):"")});
+  $("#task-tbody").innerHTML=rows.map(t=>{
+    const [txt,cls]=LEVEL_TXT[t.level];
+    return `<tr class="clickable" data-id="${t.id}">
+     <td class="mono">${t.id}</td><td>${t.flow}</td>
+     <td class="amount">${t.amount? "¥"+t.amount.toLocaleString():"—"}</td>
+     <td class="mono" style="color:var(--ink2)">${t.node}</td>
+     <td><span class="stamp ${cls}">${txt}</span></td>
+     <td>${t.conf?`<span class="conf-bar"><span class="tr"><i style="width:${t.conf*100}%;background:${t.conf>=0.9?"var(--ok)":t.conf>=0.75?"var(--warn)":"var(--seal)"}"></i></span><b>${t.conf.toFixed(2)}</b></span>`:(t.level==="running"?'<span style="display:inline-flex;align-items:center;gap:6px;color:var(--info)"><span class="spinner"></span>运行中</span>':"—")}</td>
+     <td class="mono">${t.nprob||"—"}</td><td class="mono" style="color:var(--ink2)">${t.cost}</td>
+   </tr>`}).join("")||`<tr><td colspan="8" style="text-align:center;color:var(--ink3);padding:30px">无匹配任务</td></tr>`;
+  $$("#task-tbody tr[data-id]").forEach(tr=>tr.onclick=()=>openReport(tr.dataset.id));
+}
+$$("#task-chips .chip").forEach(c=>c.onclick=()=>{
+  $$("#task-chips .chip").forEach(x=>x.classList.remove("on"));c.classList.add("on");taskFilter=c.dataset.f;renderTasks();
+});
+$("#task-search").addEventListener("input",e=>{taskKw=e.target.value.trim();renderTasks()});
+renderTasks();
+
+/* =========================================================
+   报告视图
+======================================================== */
+let currentReportId=null;
+function openReport(id){currentReportId=id;switchView("report");$("#crumb").innerHTML="审核报告<em>单据 "+esc(id)+"</em>"}
+function formRowsFor(t){
+  const rows=[["单据号",t.id],["审批流",t.flow],["提单人","张三 · 研发中心/研发一部"],["当前节点",t.node]];
+  if(t.amount)rows.splice(3,0,["金额","¥"+t.amount.toLocaleString()+".00"]);
+  return rows;
+}
+function timelineFor(t,doneIdx){
+  const base=[
+   {t:"10:22:41",d:"审批系统推送 NODE_ARRIVED 事件（webhook · HMAC 校验通过）"},
+   {t:"10:22:41",d:"幂等检查通过，创建审核任务，单据快照冻结"},
+   {t:"10:22:42",d:"预处理完成：附件 OCR 与表单结构化"},
+   {t:"10:22:42",d:"规则引擎：DSL 求值完成，硬违规标志 = false"},
+   {t:"10:22:53",d:"LLM 审核链 S1→S2→S3(RAG)→S4 完成，产出 findings 与置信度"},
+   {t:"10:22:53",d:"决策矩阵 → "+LEVEL_TXT[t.level][0].toUpperCase()+"，路由解析完成"},
+   {t:"10:22:54",d:"回写执行成功，审核报告已附单"+(t.route?"（"+t.route+"）":"")}
+  ];
+  return base.map((e,i)=>({...e,cls:i<(doneIdx==null?base.length:doneIdx)?"done":i===doneIdx?"now":""}));
+}
+const RUN_STEPS=["预处理：快照冻结 / 附件 OCR","规则引擎：DSL 求值","LLM 审核链 S1–S4","决策矩阵融合","回写执行"];
+
+function findingCard(fd,idx){
+  return `<div class="finding">
+    <div class="finding-h"><span class="sev ${fd.sev}">${SEV_TXT[fd.sev]}</span>
+      <b style="font-size:13px">${idx+1}. ${esc(fd.title)}</b><span class="code mono">${fd.code}</span>
+      <span class="engine-tag">${esc(fd.engine)}</span></div>
+    <div class="finding-b">
+      <p>${esc(fd.detail)}</p>
+      <div class="evidence">${fd.evidence.map(([src,val])=>`<div class="ev-row"><b>${esc(src)}</b>：<span class="ev-q">${esc(val)}</span></div>`).join("")}</div>
+      ${fd.citation?`<div class="citation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 0 2 2h13"/></svg>
+        依据：<span class="cpath">${esc(fd.citation.path)}</span>（${esc(fd.citation.doc)}）
+        <span class="ev-q" style="flex-basis:100%">「${esc(fd.citation.excerpt)}」</span></div>`:""}
+    </div></div>`;
+}
+function genFindings(t){
+  if(t.fk==="purchase")return[{code:"OVER_BUDGET",sev:"major",engine:"规则引擎 · budget_check",
+    title:"超出部门季度预算余额",detail:"申请金额 ¥45,600 超过「研发中心-设备采购」科目 Q3 预算余额 ¥31,200，需先履行预算调整审批。",
+    evidence:[["表单 · form.amount","¥45,600.00"],["fn:budget_balance(研发中心, 设备采购, 2026Q3)","¥31,200.00"]],citation:null}];
+  if(t.fk==="seal")return[{code:"DUPLICATE_SUBMIT",sev:"major",engine:"规则引擎 · seal_freq",
+    title:"同事项 7 日内重复用章申请",detail:"与 9 月 22 日已办结的用章申请（用印事项、文件份数一致）重复，按《印章及用印管理规定》第 6 条应拦截确认。",
+    evidence:[["fn:duplicate_fingerprint(form)","命中 2026-09-22 单据 XZ20260922003"],["表单 · form.seal_type","合同专用章 × 2 份"]],citation:null}];
+  return[{code:"LOGIC_CONFLICT",sev:"minor",engine:"LLM · S2 一致性核对",
+    title:"事由与费用明细存在疑点",detail:"费用明细与申报事由存在不完全匹配之处，建议人工关注（置信度中等，未达阻塞阈值）。",
+    evidence:[["表单 · form.detail","见费用明细第 3 行"],["S2 置信度","0.72"]],citation:null}];
+}
+function renderReportTask(id){
+  const t=TASKS.find(x=>x.id===id);if(!t)return;
+  const stampTxt=LEVEL_TXT[t.level][2];
+  let findings,decisionHtml,sealRight;
+  if(t.level==="running"){
+    renderRunningReport(t);return;
+  }
+  if(t.level==="pass"){
+    findings=[];
+    decisionHtml=`<div class="card"><div class="card-h"><h3>审核结论</h3><span class="sub">决策矩阵：规则全过 × LLM 高置信(${t.conf.toFixed(2)}) → ${t.route.includes("抽检")?"自动通过（已抽检）":"自动通过"}</span></div>
+      <div class="card-b"><p style="line-height:1.8;color:var(--ink2)">全部规则通过，LLM 审核链未发现问题（S1 材料核验 ${t.fk==="expense"?"6/6":"5/5"} 项通过，S2/S3 无疑点）。${t.route.includes("抽检")?"该单已被随机抽检命中，回写时附加了「抽检复核」标记。":"自动通过并回写审批系统。"}</p>
+      <div class="actions">
+        <button class="btn primary" onclick="rptAction('pass_confirm')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>确认抽检通过</button>
+        <button class="btn seal" onclick="rptAction('pass_reject')">抽检驳回（升级为问题单）</button>
+        <button class="btn ghost" onclick="rptAction('export')">导出报告</button>
+      </div></div></div>`;
+  }else{
+    findings=(id==="AP202609280012")?[
+      {code:"DATE_CONFLICT",sev:"major",engine:"LLM · S2 一致性核对",
+       title:"酒店发票覆盖晚数与行程不一致",
+       detail:"行程申请为 3 天 2 晚（9/10–9/12），但酒店发票日期覆盖 9/10 至 9/15 共 5 晚，多出 3 晚无对应行程依据。",
+       evidence:[["行程申请单 · form.trip_range","9/10 – 9/12（3天2晚）"],["发票 INV-8821 · 附件1","入住 9/10 退房 9/15"]],citation:null},
+      {code:"OVER_STANDARD",sev:"major",engine:"LLM · S3 制度符合性（RAG）",
+       title:"住宿标准超标：¥680/晚 > 一线城市标准 ¥500/晚",
+       detail:"按提单人职级（P6）适用一线城市住宿标准 ¥500/晚，实际酒店单价 ¥680/晚，超出 36%。",
+       evidence:[["发票 INV-8821 · 房价明细","¥680/晚 × 5 晚"],["差旅标准 · std.hotel_cap（P6/一线）","¥500/晚"]],
+       citation:{path:"《差旅费管理办法》第8条 第2款",doc:"doc-12 · v3 · 2026-01-01 生效",
+                 excerpt:"员工住宿标准：一线城市（北京、上海、广州、深圳）正处级及以下人员 ¥500 元/晚，超标准部分原则上由个人自理，特殊情况需事前审批。"}}]
+      :genFindings(t);
+    const advice={escalate:"建议转<b style='color:var(--seal)'>"+(t.route?esc(t.route.split(" ·")[0]):"对应节点实体人")+"</b>处理：请核实问题清单各项后选择处置方式。",
+      advisory:"疑点未达阻塞阈值，建议实体人审核时重点关注，单据继续正常流转。",
+      reject:"存在确定性违规，已按路由表打回提单人补充材料或说明。"}[t.level];
+    decisionHtml=`<div class="card"><div class="card-h"><h3>处置建议</h3><span class="sub">决策矩阵：${t.level==="escalate"||t.level==="reject"?"规则/LLM 命中问题 → "+LEVEL_TXT[t.level][0]:"规则通过 × LLM 中低置信 → 附意见"}</span></div>
+      <div class="card-b"><p style="line-height:1.8;color:var(--ink2)">${advice}</p>
+      <div class="actions">
+        <button class="btn primary" onclick="rptAction('accept')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>采纳数字人意见</button>
+        <button class="btn" onclick="rptAction('ignore')">忽略意见</button>
+        <button class="btn" onclick="rptAction('rerun')">重新审核</button>
+        <button class="btn ghost" onclick="rptAction('export')">导出报告</button>
+      </div></div></div>`;
+  }
+  sealRight=(t.level==="pass"&&findings.length===0)?"":
+    `<div class="seal-circle stamp-in"><span class="sc-t">${stampTxt}</span><span class="sc-s">AI AUDITOR</span></div>`;
+  $("#view-report").innerHTML=`
+   <div class="back-btn" onclick="backToDash()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>返回看板</div>
+   <div class="report-head">
+     <div><h2>数字人审核报告 · ${esc(t.flow)}${t.amount?" ¥"+t.amount.toLocaleString()+".00":""}</h2>
+       <div class="meta">单据 <span class="mono">${t.id}</span> · 提单人 张三（研发一部） · 结论 <b style="color:${t.level==="pass"?"var(--ok)":"var(--seal)"}">${LEVEL_TXT[t.level][0]}</b>${t.route?" · "+esc(t.route):""} · 综合置信度 <span class="mono">${t.conf?t.conf.toFixed(2):"—"}</span> · 端到端 ${esc(t.cost)}</div></div>
+     ${sealRight}
+   </div>
+   <div class="report-grid">
+     <div>
+       ${t.level==="pass"?decisionHtml:`
+       <div class="card"><div class="card-h"><h3>问题清单</h3><span class="sub">${findings.length} 项 · 每项均含证据定位${findings.some(f=>f.citation)?"与制度依据":""}</span></div>
+         <div class="card-b">${findings.map(findingCard).join("")||'<p style="color:var(--ink3)">无问题项</p>'}</div></div>
+       ${decisionHtml}`}</div>
+     <div>
+       <div class="card"><div class="card-h"><h3>单据信息</h3></div><div class="card-b info-list">
+         ${formRowsFor(t).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div>
+       <div class="card" style="margin-top:14px"><div class="card-h"><h3>处理时间线</h3><span class="sub">全链路留痕</span></div>
+         <div class="card-b"><div class="tl">${timelineFor(t).map(e=>`<div class="tl-item ${e.cls}"><div class="t1">${e.t}</div><div class="t2">${esc(e.d)}</div></div>`).join("")}</div></div></div>
+     </div>
+   </div>`;
+}
+function renderRunningReport(t){
+  const html=`
+   <div class="back-btn" onclick="backToDash()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>返回看板</div>
+   <div class="report-head">
+     <div><h2>数字人审核报告 · ${esc(t.flow)}${t.amount?" ¥"+t.amount.toLocaleString()+".00":""}</h2>
+       <div class="meta">单据 <span class="mono">${t.id}</span> · 审核任务执行中 · 已运行 ${t.runStep*3+2}s</div></div>
+     <div class="seal-circle" style="animation:none;opacity:.25"><span class="sc-t">待盖章</span><span class="sc-s">PENDING</span></div>
+   </div>
+   <div class="report-grid"><div>
+     <div class="run-box">
+       <div style="display:flex;align-items:center;gap:10px"><span class="spinner"></span><b style="font-size:14px;font-family:var(--serif)">审核流水线执行中</b>
+         <button class="btn primary" style="margin-left:auto" onclick="advanceRun('${t.id}')">推进下一步（模拟）</button></div>
+       <div class="run-steps">
+        ${RUN_STEPS.map((s,i)=>{
+          const cls=i<t.runStep?"done":i===t.runStep?"now":"";
+          return `<div class="run-step ${cls}"><span class="dot"></span>${esc(s)}${cls==="now"?'<span class="spinner" style="margin-left:4px"></span>':""}${cls==="done"?'<span style="margin-left:auto;font-size:11px;color:var(--ok)">✓ 完成</span>':""}</div>`}).join("")}
+       </div>
+       <div class="hint">真实系统中各步骤由 Arq Worker 异步驱动，该页轮询任务状态自动刷新；此处用「推进下一步」模拟。</div>
+     </div></div>
+     <div><div class="card"><div class="card-h"><h3>单据信息</h3></div><div class="card-b info-list">
+       ${formRowsFor(t).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("")}</div></div></div>
+   </div>`;
+  $("#view-report").innerHTML=html;
+}
+function advanceRun(id){
+  const t=TASKS.find(x=>x.id===id);
+  if(t.runStep<RUN_STEPS.length-1){t.runStep++;renderReportTask(id);toast("步骤完成："+RUN_STEPS[t.runStep-1])}
+  else{
+    t.level=id==="AP202609280002"?"escalate":"pass";
+    t.conf=id==="AP202609280002"?0.9:0.94;t.nprob=t.level==="escalate"?1:0;
+    t.cost=(18+Math.round(Math.random()*8))+"s";t.route=t.level==="escalate"?"legal · 加签":"自动通过 · 未抽检";
+    t.runStep=99;renderTasks();renderReportTask(id);
+    toast("审核完成，结论："+LEVEL_TXT[t.level][0]);
+  }
+}
+function rptAction(a){
+  if(a==="accept")toast("采纳数字人意见：已按路由处置并回写审批系统","采纳");
+  else if(a==="ignore")toast("已忽略数字人意见，单据保持人工审核");
+  else if(a==="rerun")toast("审核任务已重置为 received，Worker 将重新执行全流水线","重新");
+  else if(a==="export")toast("审核报告 PDF 已导出（含证据定位与制度引用）","PDF");
+  else if(a==="pass_confirm")toast("抽检确认通过：人工复核与数字人结论一致，已计入评测集","抽检");
+  else if(a==="pass_reject")toast("抽检驳回：该单升级为问题单，置信度校准数据已记录","驳回");
+}
+function backToDash(){switchView("dashboard")}
+
+/* =========================================================
+   路由配置
+======================================================== */
+function renderFlowTabs(){
+  $("#flow-tabs").innerHTML=Object.entries(FLOWS).map(([k,f])=>
+    `<span class="ft ${k===currentFlow?"on":""}" data-k="${k}">${f.name}</span>`).join("");
+  $$("#flow-tabs .ft").forEach(t=>t.onclick=()=>{currentFlow=t.dataset.k;renderFlowTabs();renderRouteCfg();});
+}
+function nodeLabel(node){
+  if(node==="$current_node")return"$current_node（当前节点）";
+  const f=FLOWS[currentFlow],n=f.nodes.find(x=>x[0]===node);
+  return n?node+"（"+n[1]+"）":node;
+}
+function renderRouteCfg(){
+  const f=FLOWS[currentFlow];
+  $("#cfg-ver").textContent="version "+f.version;
+  $("#route-sub").textContent=f.name+" · "+f.code+" · 首个命中生效 · 保存时校验节点合法性";
+  $$("#mode-seg .sg").forEach(s=>s.classList.toggle("on",s.dataset.m===f.mode));
+  $("#cfg-threshold").value=f.threshold;$("#cfg-sample").value=f.sample;$("#cfg-cap").value=f.cap;
+  $("#mode-hint").textContent=MODE_HINT[f.mode];
+  $("#mode-pill").textContent=MODE_TXT[FLOWS.expense.mode];
+  $("#route-tbody").innerHTML=f.rules.map((r,i)=>`
+   <tr>
+     <td><div class="pcodes">${r.codes.map(c=>`<span class="pc static">${c}</span>`).join("")}</div></td>
+     <td><span class="sev ${r.sev}" style="font-family:'JetBrains Mono',monospace">${r.sev}</span></td>
+     <td class="mono">${esc(nodeLabel(r.node))}</td>
+     <td class="mono" style="color:var(--ink2)">${r.action}</td>
+     <td>${r.notify?'<span style="color:var(--ok)">推送</span>':'<span style="color:var(--ink3)">—</span>'}</td>
+     <td><button class="icon-btn" data-del="${i}" title="删除规则"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button></td>
+   </tr>`).join("");
+  $$("#route-tbody [data-del]").forEach(b=>b.onclick=()=>{
+    confirmDlg("删除路由规则","删除后该类问题将落入 fallback（当前节点 + 附意见）。确认删除？",()=>{
+      f.rules.splice(+b.dataset.del,1);renderRouteCfg();toast("路由规则已删除（未保存，点击「保存配置」生效）")});
+  });
+  $("#add-node").innerHTML=f.nodes.map(([k,l])=>`<option value="${k}">${k}（${l}）</option>`).join("")+`<option value="$current_node">$current_node（当前节点）</option>`;
+  $("#add-pcodes").innerHTML=ALL_PCODES.map(c=>`<span class="pc" data-c="${c}">${c}</span>`).join("");
+  $$("#add-pcodes .pc").forEach(p=>p.onclick=()=>p.classList.toggle("on"));
+}
+const ALL_PCODES=["MISSING_ATTACHMENT","MISSING_FIELD","INVOICE_MISMATCH","OCR_UNREADABLE","DATE_CONFLICT","AMOUNT_CONFLICT","LOGIC_CONFLICT","OVER_STANDARD","POLICY_VIOLATION","OVER_BUDGET","BLACKLIST_HIT","DUPLICATE_SUBMIT","OVERDUE_SUBMIT","ENGINE_TIMEOUT","PREPROCESS_FAILED"];
+$("#btn-add-rule").onclick=()=>{
+  const f=FLOWS[currentFlow];
+  const codes=$$("#add-pcodes .pc.on").map(p=>p.dataset.c);
+  if(!codes.length)return toast("请至少选择 1 个问题码");
+  const node=$("#add-node").value,action=$("#add-action").value;
+  if(node!=="$current_node"&&action==="ESCALATE"&&node==="applicant")
+    return toast("校验失败：applicant 节点不支持 ESCALATE 动作，请改用 REJECT_TO_NODE");
+  f.rules.push({codes,sev:$("#add-sev").value,node,action,notify:$("#add-notify").value==="1"});
+  renderRouteCfg();toast("规则已添加（未保存，点击「保存配置」生效）");
+};
+$$("#mode-seg .sg").forEach(s=>s.onclick=()=>{
+  const f=FLOWS[currentFlow];
+  if(s.dataset.m===f.mode)return;
+  confirmDlg("切换运行模式",`将「${f.name}」审批流从「${MODE_TXT[f.mode]}」切换为「${MODE_TXT[s.dataset.m]}」？切换立即对该流后续新单据生效。`,()=>{
+    f.mode=s.dataset.m;renderRouteCfg();toast("运行模式已切换为"+MODE_TXT[f.mode]);
+  });
+});
+$("#btn-save-cfg").onclick=()=>{
+  const f=FLOWS[currentFlow];
+  const th=+$("#cfg-threshold").value,sp=+$("#cfg-sample").value;
+  if(!(th>=0))return toast("校验失败：金额上限不能为负数");
+  if(!(sp>=0&&sp<=100))return toast("校验失败：抽检比例须在 0–100 之间");
+  f.threshold=th;f.sample=sp;f.cap=$("#cfg-cap").value;f.version++;
+  renderRouteCfg();
+  toast(`配置已保存：${f.name} version ${f.version} · ${f.rules.length} 条路由规则节点合法性校验通过`);
+};
+
+/* =========================================================
+   制度知识库
+======================================================== */
+function renderKB(){
+  $("#nav-kb").textContent=KB_DOCS.filter(d=>d.status==="active").length;
+  $("#kb-tbody").innerHTML=KB_DOCS.map((d,i)=>`
+   <tr class="clickable" data-i="${i}">
+     <td class="doc-title">${esc(d.title)}</td>
+     <td class="mono">v${d.ver}</td>
+     <td class="mono" style="color:var(--ink2)">${d.from} ~ ${d.to||"长期"}</td>
+     <td class="mono">${d.chunks}</td>
+     <td style="color:var(--ink2)">${FLOWS[d.scope]?FLOWS[d.scope].name:d.scope}</td>
+     <td><span class="st-tag ${d.status}">${d.status==="active"?"生效中":"已归档"}</span></td>
+     <td>${d.status==="active"?`<button class="icon-btn" data-arch="${i}" title="归档版本"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg></button>`:""}</td>
+   </tr>`).join("");
+  $$("#kb-tbody tr[data-i]").forEach(tr=>tr.onclick=e=>{
+    if(e.target.closest("[data-arch]"))return;
+    showDocDetail(KB_DOCS[+tr.dataset.i]);
+  });
+  $$("#kb-tbody [data-arch]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();const d=KB_DOCS[+b.dataset.arch];
+    confirmDlg("归档文档版本",`将「${d.title} v${d.ver}」标记为已归档？归档后新单据检索不再命中（历史单据重放仍可命中）。`,()=>{
+      d.status="archived";renderKB();toast("已归档："+d.title+" v"+d.ver)});
+  });
+}
+function showDocDetail(d){
+  const chunks=KB_CHUNKS.filter(c=>c.doc.startsWith(d.title));
+  openModal(`<h4>${esc(d.title)} <span class="ver-tag">v${d.ver}</span></h4>
+    <p>维护部门：${esc(d.owner)} · 生效期 ${d.from} ~ ${d.to||"长期"} · ${d.chunks} 个切片 · 适用流：${FLOWS[d.scope]?FLOWS[d.scope].name:d.scope}</p>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">切片预览（按条款层级切分，保留 clause_path 引用锚点）：</div>
+    ${chunks.map(c=>`<div class="chunk"><div class="c-head"><span class="c-path">${esc(c.path)}</span><span class="c-doc">${esc(c.doc)}</span></div><p>${esc(c.text)}</p></div>`).join("")||'<p style="color:var(--ink3)">切片内容略</p>'}
+    <div class="m-btns"><button class="btn" onclick="closeModal()">关闭</button>
+    <button class="btn seal" onclick="closeModal();toast('已打开「${esc(d.title)}」在线编辑（演示）')">编辑条款</button></div>`,560);
+}
+function kbSearch(){
+  const q=$("#kb-q").value.trim();
+  if(!q)return toast("请输入检索问题");
+  const scored=KB_CHUNKS.map(c=>{
+    let s=0;
+    if(c.text.includes(q))s+=0.55;
+    q.split(/\s+/).forEach(k=>{if(k&&c.text.includes(k))s+=0.12;if(k&&c.path.includes(k))s+=0.08});
+    return{...c,score:Math.min(0.97,s+Math.random()*0.06)};
+  }).filter(c=>c.score>0.05).sort((a,b)=>b.score-a.score).slice(0,5);
+  $("#kb-results").innerHTML=scored.length?scored.map(c=>`
+    <div class="chunk"><div class="c-head"><span class="c-path">${esc(c.path)}</span><span class="c-doc">${esc(c.doc)}</span><span class="c-score">score ${c.score.toFixed(2)}</span></div>
+    <p>${esc(c.text).replace(new RegExp("("+q.split(/\s+/).filter(k=>k).map(esc).join("|")+")","g"),"<mark>$1</mark>")}</p></div>`).join("")
+   :`<p style="color:var(--ink3);padding:10px 0">未命中条款。真实系统中 S3 会输出 NO_APPLICABLE_POLICY（ADVISORY，不阻塞）。</p>`;
+  toast(`检索完成：${scored.length} 条命中（RRF 融合排序）`,"命中");
+}
+$("#btn-kb-search").onclick=kbSearch;
+$("#kb-q").addEventListener("keydown",e=>{if(e.key==="Enter")kbSearch()});
+$("#btn-upload-doc").onclick=()=>{
+  openModal(`<h4>上传制度文档</h4>
+   <div class="f-grid">
+     <div class="field"><span class="fl">文档标题</span><input type="text" id="up-title" placeholder="如：报销操作细则" style="width:100%"></div>
+     <div class="field"><span class="fl">适用审批流</span><select id="up-scope">${Object.entries(FLOWS).map(([k,f])=>`<option value="${k}">${f.name}</option>`).join("")}</select></div>
+     <div class="field"><span class="fl">生效起始日</span><input type="text" id="up-from" value="2026-10-01" style="width:100%"></div>
+     <div class="field"><span class="fl">版本号</span><input type="number" id="up-ver" value="1" style="width:100%"></div>
+   </div>
+   <div class="hint">真实系统支持 docx/pdf 上传，异步执行：解析 → 条款层级切分 → 嵌入向量化 → 入库（详见详细设计 §10）。此处演示新增记录。</div>
+   <div class="m-btns"><button class="btn" onclick="closeModal()">取消</button><button class="btn seal" id="up-ok">确认上传</button></div>`);
+  $("#up-ok").onclick=()=>{
+    const title=$("#up-title").value.trim();
+    if(!title)return toast("请填写文档标题");
+    KB_DOCS.unshift({code:"doc-"+Math.floor(31+Math.random()*60),title,ver:+$("#up-ver").value,from:$("#up-from").value,to:null,
+      chunks:Math.floor(20+Math.random()*120),scope:$("#up-scope").value,status:"active",owner:"运营部"});
+    closeModal();renderKB();toast("文档已上传，异步摄取任务已入队（解析→切片→嵌入）","上传");
+  };
+};
+
+/* =========================================================
+   规则库
+======================================================== */
+let ruleFilter="all";
+function renderRules(){
+  $("#nav-rules").textContent=RULES.length;
+  const rows=RULES.map((r,i)=>({...r,_i:i})).filter(r=>ruleFilter==="all"||r.fk===ruleFilter);
+  $("#rules-tbody").innerHTML=rows.map(r=>`
+   <tr class="clickable" data-i="${r._i}">
+     <td class="mono">${esc(r.code)}</td><td style="font-weight:500">${esc(r.name)}</td>
+     <td style="color:var(--ink2)">${FLOWS[r.fk].name}</td>
+     <td><span class="pc static">${r.problem}</span></td>
+     <td><span class="sev ${r.sev}" style="font-family:'JetBrains Mono',monospace">${r.sev}</span></td>
+     <td><label class="switch" onclick="event.stopPropagation()"><input type="checkbox" data-tg="${r._i}" ${r.enabled?"checked":""}><span class="sl"></span></label></td>
+     <td><button class="icon-btn" data-dsl="${r._i}" title="查看 DSL"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg></button></td>
+   </tr>`).join("")||`<tr><td colspan="7" style="text-align:center;color:var(--ink3);padding:30px">该审批流暂无规则</td></tr>`;
+  $$("#rules-tbody tr[data-i]").forEach(tr=>tr.onclick=()=>showDSL(RULES[+tr.dataset.i]));
+  $$("#rules-tbody [data-tg]").forEach(inp=>inp.onchange=e=>{
+    const r=RULES[+inp.dataset.tg];r.enabled=inp.checked;
+    toast(`规则 ${r.code} 已${r.enabled?"启用":"停用"}（黄金用例将随下次 CI 回归）`);
+  });
+  $$("#rules-tbody [data-dsl]").forEach(b=>b.onclick=e=>{e.stopPropagation();showDSL(RULES[+b.dataset.dsl])});
+}
+$$("#rule-chips .chip").forEach(c=>c.onclick=()=>{
+  $$("#rule-chips .chip").forEach(x=>x.classList.remove("on"));c.classList.add("on");
+  ruleFilter=c.dataset.f;renderRules();
+});
+function hlJSON(o){
+  const e=JSON.stringify(o,null,2).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return e
+   .replace(/("[^"]*?")(\s*:)/g,'<span class="k">$1</span>$2')
+   .replace(/: ("[^"]*?")/g,': <span class="s">$1</span>')
+   .replace(/: (\d+\.?\d*)/g,': <span class="n">$1</span>');
+}
+function showDSL(r){
+  openModal(`<h4>${esc(r.name)} <span class="ver-tag mono">${esc(r.code)}</span></h4>
+   <p style="margin-bottom:10px">审批流：${FLOWS[r.fk].name} · 问题码 <span class="pc static">${r.problem}</span> · 严重度 <span class="sev ${r.sev}">${r.sev}</span> · 变量前缀：<span class="mono">$form 表单 / $attachment OCR / $ctx 上下文 / $std 外部标准</span>，<span class="mono">fn:</span> 内置函数求值时懒加载并缓存。</p>
+   <div class="dsl-pre">${hlJSON(r.dsl)}</div>
+   <div class="m-btns"><button class="btn" onclick="closeModal()">关闭</button>
+   <button class="btn seal" onclick="closeModal();toast('已进入 DSL 编辑器（真实系统为可视化配置界面）')">编辑 DSL</button></div>`,580);
+}
+$("#btn-new-rule").onclick=()=>{
+  openModal(`<h4>新建规则</h4>
+   <div class="f-grid">
+     <div class="field"><span class="fl">规则码</span><input type="text" id="nr-code" placeholder="如 travel_invoice_check"></div>
+     <div class="field"><span class="fl">规则名称</span><input type="text" id="nr-name" placeholder="如 发票抬头校验"></div>
+     <div class="field"><span class="fl">审批流</span><select id="nr-flow">${Object.entries(FLOWS).map(([k,f])=>`<option value="${k}">${f.name}</option>`).join("")}</select></div>
+     <div class="field"><span class="fl">问题码</span><select id="nr-problem">${ALL_PCODES.map(c=>`<option>${c}</option>`).join("")}</select></div>
+     <div class="field"><span class="fl">严重度</span><select id="nr-sev"><option>minor</option><option selected>major</option><option>critical</option><option>info</option></select></div>
+   </div>
+   <span class="fl" style="font-size:11px;color:var(--ink3);display:block;margin-bottom:5px">规则 DSL（JSON）</span>
+   <textarea id="nr-dsl">{
+  "rule_code": "my_new_rule",
+  "when": { "op": "gt", "left": "$form.amount", "right": "$std.limit" },
+  "then": {
+    "problem_code": "OVER_STANDARD",
+    "severity": "major",
+    "message": "金额 {0} 超过标准 {1}",
+    "route_hint": "fin_manager"
+  }
+}</textarea>
+   <div class="m-btns"><button class="btn" onclick="closeModal()">取消</button><button class="btn seal" id="nr-ok">保存规则</button></div>`,580);
+  $("#nr-ok").onclick=()=>{
+    const code=$("#nr-code").value.trim(),name=$("#nr-name").value.trim();
+    if(!code||!name)return toast("请填写规则码与规则名称");
+    let dsl;try{dsl=JSON.parse($("#nr-dsl").value)}catch(e){return toast("DSL 不是合法 JSON："+e.message.slice(0,60))}
+    RULES.push({fk:$("#nr-flow").value,code,name,problem:$("#nr-problem").value,sev:$("#nr-sev").value,enabled:true,dsl});
+    closeModal();renderRules();toast("规则已保存：version 1 · 黄金用例回归已入队","保存");
+  };
+};
+renderFlowTabs();
+</script>
+</body>
+</html>

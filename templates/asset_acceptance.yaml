@@ -1,0 +1,82 @@
+template_id: asset_acceptance_v1
+name: 资产验收单
+version: 1
+category: 资产
+description: 固定资产/设备验收单要素提取，用于资产台账
+
+match:
+  keywords: ["验收", "资产", "设备验收", "固定资产", "领用", "资产编号"]
+  filename_patterns: ["*验收*", "*资产*"]
+  min_score: 2
+
+fields:
+  - key: acceptance_no
+    label: 验收单号
+    type: string
+    required: false
+  - key: asset_no
+    label: 资产编号
+    type: string
+    required: true
+    hint: 贴牌编号或验收单上的编号
+  - key: asset_name
+    label: 资产名称
+    type: string
+    required: true
+  - key: model
+    label: 型号/规格
+    type: string
+    required: false
+  - key: category
+    label: 资产类别
+    type: enum
+    enum_values: ["电子设备", "办公家具", "车辆", "仪器设备", "软件", "其他"]
+    required: false
+  - key: quantity
+    label: 数量
+    type: number
+    required: true
+  - key: unit_price
+    label: 单价（元）
+    type: money
+    required: false
+  - key: total_amount
+    label: 总金额（元）
+    type: money
+    required: false
+  - key: supplier
+    label: 供应商
+    type: string
+    required: false
+  - key: purchase_date
+    label: 采购日期
+    type: date
+    required: false
+  - key: acceptance_date
+    label: 验收日期
+    type: date
+    required: true
+  - key: location
+    label: 存放地点
+    type: string
+    required: false
+  - key: custodian
+    label: 领用人/保管人
+    type: string
+    required: false
+  - key: condition
+    label: 验收结论
+    type: enum
+    enum_values: ["验收合格", "部分合格", "不合格", "待整改"]
+    required: true
+  - key: remarks
+    label: 备注
+    type: string
+    required: false
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 数量×单价≈总额
+      expr: "unit_price 与 total_amount 均非空时 abs(quantity * unit_price - total_amount) <= 0.05"
+      on_fail: yellow

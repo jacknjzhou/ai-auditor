@@ -1,0 +1,104 @@
+template_id: purchase_sales_contract_v1
+name: 采购/销售合同
+version: 1
+category: 合同
+description: 采购合同、销售合同、服务合同关键要素提取，支持付款节点一对多
+
+match:
+  keywords: ["合同", "甲方", "乙方", "采购", "销售", "买方", "卖方", "合同金额", "违约责任"]
+  filename_patterns: ["*采购合同*", "*销售合同*", "*购销*", "*contract*"]
+  min_score: 2
+
+fields:
+  - key: contract_no
+    label: 合同编号
+    type: string
+    required: true
+  - key: contract_name
+    label: 合同名称
+    type: string
+    required: true
+    hint: 首页标题
+  - key: contract_type
+    label: 合同类型
+    type: enum
+    enum_values: ["采购合同", "销售合同", "服务合同", "框架协议"]
+    required: false
+  - key: party_a
+    label: 甲方
+    type: string
+    required: true
+    hint: 落款处全称，不用简称
+  - key: party_b
+    label: 乙方
+    type: string
+    required: true
+  - key: subject_matter
+    label: 合同标的
+    type: string
+    required: false
+    hint: 采购/销售货物或服务内容，一句话
+  - key: total_amount
+    label: 合同总金额（元）
+    type: money
+    required: true
+    hint: 含税总价；大小写冲突时以小写为准并标黄
+  - key: tax_rate
+    label: 税率
+    type: enum
+    enum_values: ["13%", "9%", "6%", "3%", "1%", "含税未注明", "不含税"]
+    required: false
+  - key: payment_schedule
+    label: 付款节点
+    type: array
+    required: false
+    items:
+      - key: milestone
+        label: 节点说明
+        type: string
+        hint: 如"预付款""到货验收后""质保金"
+      - key: ratio
+        label: 比例
+        type: string
+        hint: 如 "30%"
+      - key: amount
+        label: 金额（元）
+        type: money
+      - key: trigger
+        label: 触发条件
+        type: string
+  - key: start_date
+    label: 合同起始日
+    type: date
+    required: false
+  - key: end_date
+    label: 合同到期日
+    type: date
+    required: false
+  - key: sign_date
+    label: 签署日期
+    type: date
+    required: false
+    hint: 落款日期；双方日期不同取晚者并标黄
+  - key: breach_clause
+    label: 违约责任摘要
+    type: string
+    required: false
+    hint: 提取违约金比例/计算方式，如"日万分之五"
+  - key: seal_status
+    label: 盖章状态
+    type: enum
+    enum_values: ["双方已盖章", "仅甲方盖章", "仅乙方盖章", "未盖章", "无法判断"]
+    required: false
+    hint: 扫描件看落款印章
+
+dedup:
+  keys: [contract_no]                 # 同一合同重投递（扫描件+原件）不重复入台账
+  compare_fields: [total_amount, start_date, end_date]
+
+options:
+  confidence_threshold: 0.8
+  cross_checks:
+    - name: 付款节点求和≈合同金额
+      expr: "payment_schedule 非空时 abs(sum(payment_schedule.amount) - total_amount) <= total_amount * 0.01"
+      on_fail: yellow

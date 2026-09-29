@@ -1,0 +1,56 @@
+template_id: nda_v1
+name: 保密协议（NDA）
+version: 1
+category: 合同
+description: 保密协议/保密条款关键要素提取
+
+match:
+  keywords: ["保密", "机密", "商业秘密", "保密期限", "保密协议"]
+  filename_patterns: ["*保密*", "*NDA*"]
+  min_score: 2
+
+fields:
+  - key: doc_title
+    label: 文件标题
+    type: string
+    required: true
+  - key: party_a
+    label: 甲方
+    type: string
+    required: true
+  - key: party_b
+    label: 乙方
+    type: string
+    required: true
+  - key: nda_type
+    label: 协议类型
+    type: enum
+    enum_values: ["单向保密", "双向保密", "员工保密", "含竞业条款"]
+    required: false
+  - key: scope
+    label: 保密范围
+    type: string
+    required: true
+    hint: 概括技术/商业/客户信息等范围
+  - key: term
+    label: 保密期限
+    type: string
+    required: true
+    hint: 如"自签署日起3年"或"永久"；具体年限
+  - key: penalty
+    label: 违约金
+    type: string
+    required: false
+    hint: 金额或计算方式，如"违约金人民币50万元"
+  - key: governing_law
+    label: 争议解决
+    type: string
+    required: false
+    hint: 诉讼管辖地或仲裁机构
+  - key: sign_date
+    label: 签署日期
+    type: date
+    required: false
+
+options:
+  confidence_threshold: 0.8

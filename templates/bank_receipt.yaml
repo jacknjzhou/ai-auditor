@@ -1,0 +1,62 @@
+template_id: bank_receipt_v1
+name: 银行回单
+version: 1
+category: 财务
+description: 银行电子回单/转账凭证关键要素提取
+
+match:
+  keywords: ["回单", "电子回单", "转账凭证", "流水号", "交易日期", "付款人", "收款人"]
+  filename_patterns: ["*回单*", "*回执*", "*receipt*"]
+  min_score: 2
+
+fields:
+  - key: bank_name
+    label: 出账银行
+    type: string
+    required: false
+    hint: 回单抬头银行名称
+  - key: serial_no
+    label: 流水号
+    type: string
+    required: true
+    hint: "流水号/交易流水号/凭证号"，通常长数字串
+  - key: value_date
+    label: 交易日期
+    type: date
+    required: true
+  - key: payer_name
+    label: 付款方名称
+    type: string
+    required: true
+  - key: payer_account
+    label: 付款账号
+    type: string
+    required: false
+    rule: "^[0-9-]{10,32}$"
+  - key: payee_name
+    label: 收款方名称
+    type: string
+    required: true
+  - key: payee_account
+    label: 收款账号
+    type: string
+    required: false
+    rule: "^[0-9-]{10,32}$"
+  - key: amount
+    label: 交易金额（元）
+    type: money
+    required: true
+    hint: 有大小写金额以小写为准；外币回单记录原币金额到备注
+  - key: currency
+    label: 币种
+    type: enum
+    enum_values: ["CNY", "USD", "EUR", "HKD", "JPY", "其他"]
+    required: false
+  - key: purpose
+    label: 用途/摘要
+    type: string
+    required: false
+    hint: "用途""摘要""附言"字段
+
+options:
+  confidence_threshold: 0.8

@@ -1,0 +1,31 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node ----
+node_modules/
+
+# ---- 环境与密钥（绝不入库）----
+.env
+.env.local
+*.env
+!deploy/.env.example
+
+# ---- 工作区代理数据（非项目源码）----
+.workbuddy/
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# ---- 构建产物 ----
+dist/
+build/
+*.log

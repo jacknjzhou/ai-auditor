@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Auditor Worker (arq) instance %i
+After=network-online.target redis.service
+
+[Service]
+Type=exec
+User=auditor
+WorkingDirectory=/opt/ai-auditor
+EnvironmentFile=/opt/ai-auditor/deploy/auditor.env
+ExecStart=/opt/ai-auditor/.venv/bin/arq worker.settings.WorkerSettings --concurrency 8
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,91 @@
+template_id: meeting_minutes_v1
+name: 会议纪要
+version: 1
+category: 行政
+description: 会议纪要/会议记录要素提取，行动项一对多展开
+
+match:
+  keywords: ["会议纪要", "会议记录", "参会", "议题", "决议", "会议时间"]
+  filename_patterns: ["*会议*", "*纪要*"]
+  min_score: 2
+
+fields:
+  - key: title
+    label: 会议主题
+    type: string
+    required: true
+  - key: meeting_date
+    label: 会议日期
+    type: date
+    required: true
+  - key: location
+    label: 会议地点
+    type: string
+    required: false
+  - key: organizer
+    label: 组织人/主持人
+    type: string
+    required: false
+  - key: recorder
+    label: 记录人
+    type: string
+    required: false
+  - key: attendees
+    label: 参会人
+    type: array
+    required: false
+    items:
+      - key: name
+        label: 姓名
+        type: string
+      - key: department
+        label: 部门
+        type: string
+    hint: 逗号/顿号分隔的人名列表逐个拆分
+  - key: topics
+    label: 议题
+    type: array
+    required: false
+    items:
+      - key: topic
+        label: 议题内容
+        type: string
+  - key: decisions
+    label: 决议事项
+    type: array
+    required: false
+    items:
+      - key: decision
+        label: 决议内容
+        type: string
+      - key: related_topic
+        label: 关联议题
+        type: string
+  - key: action_items
+    label: 行动项
+    type: array
+    required: true
+    items:
+      - key: task
+        label: 任务描述
+        type: string
+      - key: owner
+        label: 负责人
+        type: string
+      - key: due_date
+        label: 截止日期
+        type: date
+        hint: "本月底/下周三"等相对日期按会议日期推算为绝对日期
+      - key: priority
+        label: 优先级
+        type: enum
+        enum_values: ["高", "中", "低"]
+    hint: 每个待办一条；无明确负责人填"未指定"并标黄
+  - key: next_meeting_date
+    label: 下次会议时间
+    type: date
+    required: false
+
+options:
+  confidence_threshold: 0.75
+  notes: 会议纪要表述自由度大，阈值放宽；行动项为最关键输出，缺失负责人/日期必须标黄
