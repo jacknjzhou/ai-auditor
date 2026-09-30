@@ -25,6 +25,26 @@
 
 name: ai-auditor
 
+# 应用层统一环境变量（独立锚点）：worker 服务用 {<<: *x-app-env, ...} 追加/覆盖，
+# 避免 YAML 浅合并时子层 environment 整体替换基座、丢失 REDIS_URL 等必填项。
+x-app-env: &x-app-env
+  AUDITOR_DATABASE_URL: "postgresql+psycopg://auditor:${POSTGRES_PASSWORD:?请在 deploy/.env 设置 POSTGRES_PASSWORD}@postgres:5432/auditor"
+  AUDITOR_REDIS_URL: "redis://:${REDIS_PASSWORD:?请在 deploy/.env 设置 REDIS_PASSWORD}@redis:6379/0"
+  AUDITOR_QUEUE_MODE: "arq"
+  AUDITOR_KERNEL_MODE: "${AUDITOR_KERNEL_MODE:-false}"
+  AUDITOR_MAX_SUSPEND_ROUNDS: "${AUDITOR_MAX_SUSPEND_ROUNDS:-3}"
+  AUDITOR_WEBHOOK_SECRET_DEFAULT: "${AUDITOR_WEBHOOK_SECRET_DEFAULT:?请在 deploy/.env 设置 AUDITOR_WEBHOOK_SECRET_DEFAULT}"
+  AUDITOR_WEBHOOK_REPLAY_WINDOW_SECONDS: "${AUDITOR_WEBHOOK_REPLAY_WINDOW_SECONDS:-300}"
+  AUDITOR_LLM_ENABLED: "${AUDITOR_LLM_ENABLED:-false}"
+  AUDITOR_LLM_BASE_URL: "${AUDITOR_LLM_BASE_URL:-http://10.26.8.43:3002/v1}"
+  AUDITOR_LLM_API_KEY: "${AUDITOR_LLM_API_KEY:-}"
+  AUDITOR_LLM_MODEL: "${AUDITOR_LLM_MODEL:-gpt-4o-mini}"
+  AUDITOR_RAG_ENABLED: "${AUDITOR_RAG_ENABLED:-false}"
+  AUDITOR_EMBEDDING_MODEL: "${AUDITOR_EMBEDDING_MODEL:-text-embedding-3-small}"
+  AUDITOR_CONF_HIGH: "${AUDITOR_CONF_HIGH:-0.90}"
+  AUDITOR_CONF_LOW: "${AUDITOR_CONF_LOW:-0.60}"
+  AUDITOR_SOPS_DIR: "/app/config/sops"
+
 x-app-base: &app-base
   build:
     context: ..
@@ -33,23 +53,14 @@ x-app-base: &app-base
   restart: unless-stopped
   # deploy/.env 提供密钥；下面的 environment 用 :? 对必填项做快速失败
   env_file: [.env]
-  environment:
-    AUDITOR_DATABASE_URL: "postgresql+psycopg://auditor:${POSTGRES_PASSWORD:?请在 deploy/.env 设置 POSTGRES_PASSWORD}@postgres:5432/auditor"
-    AUDITOR_REDIS_URL: "redis://:${REDIS_PASSWORD:?请在 deploy/.env 设置 REDIS_PASSWORD}@redis:6379/0"
-    AUDITOR_QUEUE_MODE: "arq"
-    AUDITOR_KERNEL_MODE: "${AUDITOR_KERNEL_MODE:-false}"
-    AUDITOR_MAX_SUSPEND_ROUNDS: "${AUDITOR_MAX_SUSPEND_ROUNDS:-3}"
-    AUDITOR_WEBHOOK_SECRET_DEFAULT: "${AUDITOR_WEBHOOK_SECRET_DEFAULT:?请在 deploy/.env 设置 AUDITOR_WEBHOOK_SECRET_DEFAULT}"
-    AUDITOR_WEBHOOK_REPLAY_WINDOW_SECONDS: "${AUDITOR_WEBHOOK_REPLAY_WINDOW_SECONDS:-300}"
-    AUDITOR_LLM_ENABLED: "${AUDITOR_LLM_ENABLED:-false}"
-    AUDITOR_LLM_BASE_URL: "${AUDITOR_LLM_BASE_URL:-http://10.26.8.43:3002/v1}"
-    AUDITOR_LLM_API_KEY: "${AUDITOR_LLM_API_KEY:-}"
-    AUDITOR_LLM_MODEL: "${AUDITOR_LLM_MODEL:-gpt-4o-mini}"
-    AUDITOR_RAG_ENABLED: "${AUDITOR_RAG_ENABLED:-false}"
-    AUDITOR_EMBEDDING_MODEL: "${AUDITOR_EMBEDDING_MODEL:-text-embedding-3-small}"
-    AUDITOR_CONF_HIGH: "${AUDITOR_CONF_HIGH:-0.90}"
-    AUDITOR_CONF_LOW: "${AUDITOR_CONF_LOW:-0.60}"
-    AUDITOR_SOPS_DIR: "/app/config/sops"
+  environment: *x-app-env
+  # 资源上限（compose v2 非 Swarm 模式同样生效：cpus→--cpus，memory→--memory）
+  # migrate / api×2 / worker×2 共用此锚点；重负载场景可整体上调
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 512M
   volumes:
     # SOP 配置只读挂载：改 config/sops/*.yaml 后 `make load-sops` 即可生效，无需重建镜像
     - ../config/sops:/app/config/sops:ro
@@ -73,6 +84,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     # 生产不对宿主机暴露；调试时用 127.0.0.1 前缀临时放开
     # ports: ["127.0.0.1:5432:5432"]
     networks: [auditor-net]
@@ -90,6 +106,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     networks: [auditor-net]
 
   # ==================== 一次性初始化（建表 + 装载 SOP） ====================
@@ -146,6 +167,7 @@ services:
     <<: *app-base
     command: ["arq", "worker.settings.WorkerSettings"]
     environment:
+      <<: *x-app-env
       AUDITOR_QUEUE_MODE: "inline"   # worker 进程内直接执行，避免二次入队
     depends_on:
       postgres:
@@ -165,6 +187,7 @@ services:
     <<: *app-base
     command: ["arq", "worker.settings.WorkerSettings"]
     environment:
+      <<: *x-app-env
       AUDITOR_QUEUE_MODE: "inline"
     depends_on:
       postgres:
@@ -195,10 +218,16 @@ services:
       api-2:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      # 必须用 127.0.0.1：listen 80 只绑 IPv4，localhost 会先解析 ::1 导致拒连
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     networks: [auditor-net]
 
   # ==================== 可选：数据库调试（--profile tools） ====================
@@ -214,6 +243,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
     networks: [auditor-net]
 
 volumes:

@@ -16,6 +16,9 @@ async def run_audit_task_job(ctx, task_id: str) -> None:
 class WorkerSettings:
     functions = [run_audit_task_job]
     redis_settings = None  # 延迟从 settings 解析，避免 import 期连接
+    # 消费队列名必须与派发端（app/services/dispatcher.py enqueue_arq 的
+    # default_queue_name）一致，否则任务投进队列后 worker 永远消费不到
+    queue_name = settings.arq_queue_name
     max_jobs: int = 8
     job_timeout: int = 120
     health_check_interval: int = 10
