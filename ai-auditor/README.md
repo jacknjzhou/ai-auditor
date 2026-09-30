@@ -123,6 +123,20 @@ make ps && curl http://localhost:8300/healthz
 裸机（systemd）方案见 `deploy/auditor-api.service`、`deploy/auditor-worker@.service`，
 与容器化二选一，共用同一套环境变量与 CLI（`python -m app.cli init|load-sops|check|seed`）。
 
+## 对接外部审批系统
+
+完整对接指南见 [`../docs/对接指南-外部审批系统接入.md`](../docs/对接指南-外部审批系统接入.md)
+（协议已端到端实测）：**入站 HMAC webhook + 出站回写端点**双向协议、Canonical 报文结构、
+签名算法踩坑点、四档放权与灰度路径、现状边界清单、常见问题排查。
+
+自测工具（零依赖，标准库实现）：
+
+```bash
+python tools/onboard_check.py listen --port 19101     # 收 ai-auditor 下发的处置回写
+python tools/onboard_check.py publish --url http://localhost:8300 \
+    --source oa-a8 --secret <connector密钥> --flow expense_reimburse --amount 500000
+```
+
 ## 配置（环境变量前缀 AUDITOR_）
 
 | 变量 | 默认 | 说明 |
@@ -154,6 +168,7 @@ ai-auditor/
 │   └── pipeline/   # rules 规则引擎 / fusion 决策矩阵 / kernel 三层内核 / llm / rag / routing
 ├── config/sops/    # 示例 SOP（YAML）+ 路由表（JSON）—— 新流零代码接入
 ├── sql/            # 生产 PostgreSQL DDL（pgcrypto + pgvector）
+├── tools/          # 对接自测工具（onboard_check.py：模拟审批系统推单/收回写）
 ├── deploy/         # Dockerfile / docker-compose（一键全栈）/ nginx / Makefile / systemd
 └── tests/          # 129 个用例：规则/矩阵/webhook/内核等价迁移/事件流/挂起恢复/零代码接入/CLI
 ```
