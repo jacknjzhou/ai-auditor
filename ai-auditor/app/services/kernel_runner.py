@@ -33,6 +33,8 @@ from app.models.entities import AuditTask, FlowProfile, LlmCall
 from app.schemas.canonical import FindingOut
 from worker.pipeline.kernel.capabilities import (CapabilityContext,
                                                  default_registry)
+from worker.pipeline.kernel import events as _ev
+from worker.pipeline.kernel.events import EventRecorder
 from worker.pipeline.kernel.harness import HarnessAgent
 from worker.pipeline.kernel.planner import (RESERVED, AuditPlanner, AuditSOP)
 from worker.pipeline.rules.engine import RuleEngine
@@ -209,6 +211,9 @@ def run_kernel_pipeline(db: Session, task: AuditTask, *, profile: FlowProfile,
         from worker.pipeline.llm.client import NewAPIClient
         chain = LLMaterialAuditChain(NewAPIClient())
 
+    # ---- T4：run_event 全链路埋点（内存累积，finally 统一落库） ----
+    rec = EventRecorder()
+
     # ---- 规则预求值（与 legacy 同一 engine/scope；结果经能力进入帧协议） ----
     rule_findings: list[FindingOut] = []
     for rule in rules:
@@ -232,7 +237,7 @@ def run_kernel_pipeline(db: Session, task: AuditTask, *, profile: FlowProfile,
     if excerpts:
         ctx.scratch["policy_excerpts"] = list(excerpts)
 
-    harness = HarnessAgent(default_registry())
+    harness = HarnessAgent(default_registry(), on_event=rec.emit)
     planner = AuditPlanner()
     sop = _load_sop(profile)
     rag_query = _rag_query(task.snapshot or {})
@@ -248,9 +253,24 @@ def run_kernel_pipeline(db: Session, task: AuditTask, *, profile: FlowProfile,
         for frame in frames:
             if frame.kind in ("llm_verify", "risk_assess"):
                 task.status = "llm_chain"
+            rec.emit(_ev.EVENT_FRAME_STARTED, frame_id=frame.frame_id,
+                     kind=frame.kind, node_id=frame.node_id)
             outcome = harness.run(frame, ctx, _deterministic_actor(frame, rag_query))
             executed_ids.append(frame.frame_id)
             all_findings.extend(outcome.findings)
+            # capability_call 留痕（budget_left = 预算余量，仅实际扣减的调用有值）
+            consumed = 0
+            for call in outcome.calls:
+                budget_left = None
+                if call.budget_consumed:
+                    consumed += 1
+                    budget_left = frame.requirement.knowledge_budget - consumed
+                rec.record_capability(frame.frame_id, call, budget_left)
+            rec.emit(_ev.EVENT_FRAME_FINISHED, frame_id=frame.frame_id,
+                     status=outcome.status, n_findings=len(outcome.findings),
+                     n_calls=len(outcome.calls), degraded=outcome.degraded,
+                     halt_run=outcome.halt_run, loops=outcome.loops,
+                     protocol_repairs=outcome.protocol_repairs)
             if outcome.confidence is not None:
                 confidence = outcome.confidence
             if outcome.summary:
@@ -261,59 +281,86 @@ def run_kernel_pipeline(db: Session, task: AuditTask, *, profile: FlowProfile,
                 return "halt"
         return "ok"
 
-    result = planner.plan(sop, task.id, scope)
-    state = _run_frames(result.frames)
+    def _emit_planned(frames) -> None:
+        for f in frames:
+            rec.emit(_ev.EVENT_FRAME_PLANNED, frame_id=f.frame_id, kind=f.kind,
+                     node_id=f.node_id,
+                     required_capabilities=list(f.requirement.required_capabilities),
+                     optional_capabilities=list(f.requirement.optional_capabilities))
 
-    # ---- 运行时条件：解析 → 二次展开（内置 SOP 会在此走完 policy/risk/writeback） ----
-    guard = 0
-    while state == "ok" and result.continuation and guard < 16:
-        guard += 1
-        stop_node_id = next((f.node_id for f in result.frames
-                             if f.frame_id == result.continuation_after), None)
-        if stop_node_id is None:
-            logger.warning("run %s continuation 无对应帧: %s",
-                           task.id, result.continuation_after)
-            break
-        nxt = _resolve_next(sop, stop_node_id, _run_state(all_findings),
-                            engine, scope)
-        if nxt is None:
-            logger.warning("run %s 节点 %s 运行时条件均未满足，提前终结",
-                           task.id, stop_node_id)
-            break
-        if nxt in RESERVED:
-            result.terminal = nxt
-            result.continuation = None
-            logger.info("run %s 命中终态 %s（节点 %s）", task.id, nxt, stop_node_id)
-            break
-        result = planner.expand(sop, task.id, nxt,
-                                seq_start=len(executed_ids) + 1,
-                                depends_on=[result.continuation_after],
-                                scope=scope)
+    try:
+        result = planner.plan(sop, task.id, scope)
+        _emit_planned(result.frames)
         state = _run_frames(result.frames)
 
-    # ---- findings 落库（与 legacy"统一落库"口径一致） ----
-    from app.models.entities import AuditFinding
-    for f in all_findings:
-        db.add(AuditFinding(task_id=task.id, problem_code=f.problem_code,
-                            severity=f.severity, engine=f.engine, title=f.title,
-                            detail=f.detail, evidence=f.evidence,
-                            rule_code=f.rule_code))
+        # ---- 运行时条件：解析 → 二次展开（内置 SOP 会在此走完 policy/risk/writeback） ----
+        guard = 0
+        while state == "ok" and result.continuation and guard < 16:
+            guard += 1
+            stop_node_id = next((f.node_id for f in result.frames
+                                 if f.frame_id == result.continuation_after), None)
+            if stop_node_id is None:
+                logger.warning("run %s continuation 无对应帧: %s",
+                               task.id, result.continuation_after)
+                break
+            nxt = _resolve_next(sop, stop_node_id, _run_state(all_findings),
+                                engine, scope)
+            if nxt is None:
+                logger.warning("run %s 节点 %s 运行时条件均未满足，提前终结",
+                               task.id, stop_node_id)
+                break
+            if nxt in RESERVED:
+                result.terminal = nxt
+                result.continuation = None
+                logger.info("run %s 命中终态 %s（节点 %s）", task.id, nxt, stop_node_id)
+                break
+            result = planner.expand(sop, task.id, nxt,
+                                    seq_start=len(executed_ids) + 1,
+                                    depends_on=[result.continuation_after],
+                                    scope=scope)
+            _emit_planned(result.frames)
+            state = _run_frames(result.frames)
 
-    # ---- LLM 调用留痕（与 legacy 同源：链结果缓存中的 traces） ----
-    chain_result = ctx.cache_get("llm_chain_result")
-    if chain_result is not None:
-        for tr in chain_result.traces:
-            db.add(LlmCall(task_id=task.id, step=tr.step, model=tr.model,
-                           ok=tr.ok, degraded=tr.degraded,
-                           latency_ms=tr.latency_ms, attempts=tr.attempts,
-                           error=tr.error[:1000],
-                           response_digest=tr.response_digest))
+        # ---- findings 落库（与 legacy"统一落库"口径一致） ----
+        from app.models.entities import AuditFinding, EscalationLog
+        for f in all_findings:
+            db.add(AuditFinding(task_id=task.id, problem_code=f.problem_code,
+                                severity=f.severity, engine=f.engine, title=f.title,
+                                detail=f.detail, evidence=f.evidence,
+                                rule_code=f.rule_code))
 
-    # ---- 决策矩阵 + 路由回写（与 legacy 同一代码路径） ----
-    level = _decide_and_writeback(db, task, profile, findings=all_findings,
-                                  llm_confidence=confidence, llm_summary=summary,
-                                  writeback_adapter=writeback_adapter)
-    logger.info("kernel run %s decided: level=%s frames=%d findings=%d "
-                "terminal=%s conf=%s",
-                task.id, level, len(executed_ids), len(all_findings),
-                result.terminal, confidence)
+        # ---- LLM 调用留痕（与 legacy 同源：链结果缓存中的 traces） ----
+        chain_result = ctx.cache_get("llm_chain_result")
+        if chain_result is not None:
+            for tr in chain_result.traces:
+                db.add(LlmCall(task_id=task.id, step=tr.step, model=tr.model,
+                               ok=tr.ok, degraded=tr.degraded,
+                               latency_ms=tr.latency_ms, attempts=tr.attempts,
+                               error=tr.error[:1000],
+                               response_digest=tr.response_digest))
+
+        # ---- 决策矩阵 + 路由回写（与 legacy 同一代码路径） ----
+        level = _decide_and_writeback(db, task, profile, findings=all_findings,
+                                      llm_confidence=confidence, llm_summary=summary,
+                                      writeback_adapter=writeback_adapter)
+
+        # ---- T4：composed / writeback_applied 事件（回写结果取本次 run 的 escalation 记录） ----
+        db.flush()  # autoflush=False：让 _decide_and_writeback 挂起的 escalation 行对本查询可见
+        esc = (db.query(EscalationLog).filter_by(task_id=task.id)
+               .order_by(EscalationLog.id.desc()).first())
+        rec.emit(_ev.EVENT_COMPOSED, level=level, terminal=result.terminal,
+                 n_findings=len(all_findings), confidence=confidence)
+        rec.emit(_ev.EVENT_WRITEBACK_APPLIED, level=level,
+                 writeback_status=esc.writeback_status if esc else "none",
+                 action=esc.action if esc else "",
+                 target_node=esc.target_node if esc else "")
+        logger.info("kernel run %s decided: level=%s frames=%d findings=%d "
+                    "terminal=%s conf=%s",
+                    task.id, level, len(executed_ids), len(all_findings),
+                    result.terminal, confidence)
+    finally:
+        # 事件流旁路落库：即使主流程异常也不吞异常、不阻断外层 failed 处理
+        try:
+            rec.flush(db, task.id)
+        except Exception:  # noqa: BLE001
+            logger.warning("run %s run_event 落库失败", task.id, exc_info=True)

@@ -161,6 +161,47 @@ class EscalationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class RunEvent(Base):
+    """run_event 全链路埋点（v3.0 内核设计 §6/§7，T4）。
+
+    Planner/Harness/Composer 三层统一事件流：(run_id, seq) 唯一，seq 单调递增；
+    事件类型：frame_planned / frame_started / capability_called / capability_result
+    / protocol_repair / awaiting_human / frame_finished / composed / writeback_applied。
+    增量查询 API 先行（GET /api/v1/runs/{run_id}/events?after_seq=），SSE 留 P4。
+    """
+    __tablename__ = "run_event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_task.id"))
+    seq: Mapped[int] = mapped_column(Integer)  # (run_id, seq) 唯一
+    event_type: Mapped[str] = mapped_column(String(32))
+    frame_id: Mapped[str] = mapped_column(String(80), default="")
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (Index("uq_run_event_run_seq", "run_id", "seq", unique=True),)
+
+
+class CapabilityCallRecord(Base):
+    """capability_call 能力调用留痕（v3.0 设计 §7）：预算审计与延迟画像。
+
+    与 run_event.capability_result 同源，独立成表便于预算/延迟聚合审计；
+    budget_left = 该次调用完成后帧内知识预算余量（仅 budgeted 能力有意义）。
+    """
+    __tablename__ = "capability_call"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_task.id"))
+    frame_id: Mapped[str] = mapped_column(String(80))
+    capability: Mapped[str] = mapped_column(String(64))
+    arguments_digest: Mapped[str] = mapped_column(Text, default="")
+    result_digest: Mapped[str] = mapped_column(Text, default="")
+    ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    budget_left: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (Index("ix_capcall_run", "run_id", "frame_id"),)
+
+
 class KnowledgeDoc(Base):
     """制度文档（版本化，生效期按单据提交日过滤）。"""
     __tablename__ = "knowledge_doc"

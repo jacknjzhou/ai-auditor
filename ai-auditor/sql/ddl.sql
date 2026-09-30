@@ -174,3 +174,32 @@ CREATE TABLE escalation_log (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_esc_task ON escalation_log(task_id);
+
+-- P3.0-T4: run_event 全链路埋点（Planner/Harness/Composer 三层统一事件流）
+CREATE TABLE run_event (
+    id          SERIAL PRIMARY KEY,
+    run_id      UUID NOT NULL REFERENCES audit_task(id),
+    seq         INTEGER NOT NULL,
+    event_type  VARCHAR(32) NOT NULL,
+    frame_id    VARCHAR(80) NOT NULL DEFAULT '',
+    payload     JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_run_event_run_seq UNIQUE (run_id, seq)
+);
+
+-- P3.0-T4: capability_call 能力调用留痕（预算/延迟审计）
+CREATE TABLE capability_call (
+    id               SERIAL PRIMARY KEY,
+    run_id           UUID NOT NULL REFERENCES audit_task(id),
+    frame_id         VARCHAR(80) NOT NULL,
+    capability       VARCHAR(64) NOT NULL,
+    arguments_digest TEXT NOT NULL DEFAULT '',
+    result_digest    TEXT NOT NULL DEFAULT '',
+    ok               BOOLEAN NOT NULL DEFAULT FALSE,
+    retryable        BOOLEAN NOT NULL DEFAULT TRUE,
+    latency_ms       INTEGER NOT NULL DEFAULT 0,
+    budget_left      INTEGER,
+    error            TEXT NOT NULL DEFAULT '',
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_capcall_run ON capability_call(run_id, frame_id);

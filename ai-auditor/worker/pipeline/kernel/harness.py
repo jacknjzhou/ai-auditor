@@ -142,12 +142,24 @@ class HarnessAgent:
         repair_attempts: int = 2,
         criteria_evaluator: Callable[[list[str], FrameOutcome, TaskFrame],
                                      list[str]] | None = None,
+        on_event: Callable[..., Any] | None = None,
     ) -> None:
         self.registry = registry
         self.max_loops = max_loops
         self.repair_attempts = repair_attempts
         # completion_criteria 校验钩子：返回未满足项清单；缺省视为全部满足
         self.criteria_evaluator = criteria_evaluator or (lambda criteria, o, f: [])
+        # T4 埋点钩子：emit(event_type, frame_id=..., **payload)；埋点失败不影响执行
+        self.on_event = on_event
+
+    def _emit(self, event_type: str, frame_id: str, **payload: Any) -> None:
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event_type, frame_id=frame_id, **payload)
+        except Exception:  # noqa: BLE001 —— 埋点属于旁路观测，绝不打断主流程
+            logger.warning("run_event 埋点失败 (%s/%s)", event_type, frame_id,
+                           exc_info=True)
 
     # ---------- 动作解析 ----------
     @staticmethod
@@ -219,6 +231,9 @@ class HarnessAgent:
                     return self._failed(outcome, frame, "protocol_error",
                                         f"协议修复超限: {exc}")
                 outcome.protocol_repairs += 1
+                self._emit("protocol_repair", frame.frame_id,
+                           reason=str(exc), hint=exc.repair_hint,
+                           repairs=outcome.protocol_repairs)
                 turns.append({"role": "repair",
                               "content": f"protocol_repair: {exc.repair_hint}"})
                 continue
@@ -236,6 +251,9 @@ class HarnessAgent:
                         return self._failed(outcome, frame,
                                             "missing_required_capabilities", hint)
                     outcome.protocol_repairs += 1
+                    self._emit("protocol_repair", frame.frame_id,
+                               reason="missing_required_capabilities",
+                               hint=hint, repairs=outcome.protocol_repairs)
                     turns.append({"role": "repair",
                                   "content": f"protocol_repair: {hint}"})
                     continue
@@ -247,6 +265,9 @@ class HarnessAgent:
                     if outcome.protocol_repairs >= self.repair_attempts:
                         return self._failed(outcome, frame, "criteria_unmet", hint)
                     outcome.protocol_repairs += 1
+                    self._emit("protocol_repair", frame.frame_id,
+                               reason="criteria_unmet", hint=hint,
+                               repairs=outcome.protocol_repairs)
                     turns.append({"role": "repair",
                                   "content": f"protocol_repair: {hint}"})
                     continue
@@ -262,6 +283,9 @@ class HarnessAgent:
                 if outcome.protocol_repairs >= self.repair_attempts:
                     return self._failed(outcome, frame, "protocol_error", hint)
                 outcome.protocol_repairs += 1
+                self._emit("protocol_repair", frame.frame_id,
+                           reason="unknown_capability", hint=hint,
+                           repairs=outcome.protocol_repairs)
                 turns.append({"role": "repair", "content": f"protocol_repair: {hint}"})
                 continue
 
@@ -271,6 +295,9 @@ class HarnessAgent:
                 if outcome.protocol_repairs >= self.repair_attempts:
                     return self._failed(outcome, frame, "capability_forbidden", hint)
                 outcome.protocol_repairs += 1
+                self._emit("protocol_repair", frame.frame_id,
+                           reason="capability_forbidden", hint=hint,
+                           repairs=outcome.protocol_repairs)
                 turns.append({"role": "repair", "content": f"protocol_repair: {hint}"})
                 continue
 
@@ -283,6 +310,11 @@ class HarnessAgent:
                     ok=False, error="budget_exhausted", retryable=False,
                     budget_consumed=False)
                 outcome.calls.append(record)
+                self._emit("capability_called", frame.frame_id,
+                           tool=tool_name, arguments_digest=record.arguments_digest)
+                self._emit("capability_result", frame.frame_id, tool=tool_name,
+                           ok=False, error="budget_exhausted", retryable=False,
+                           latency_ms=0, budget_left=0)
                 turns.append({"role": "observation", "content": json.dumps(
                     {"tool": tool_name, "ok": False, "error": "budget_exhausted",
                      "retryable": False,
@@ -298,14 +330,24 @@ class HarnessAgent:
                 if outcome.protocol_repairs >= self.repair_attempts:
                     return self._failed(outcome, frame, "retry_forbidden", hint)
                 outcome.protocol_repairs += 1
+                self._emit("protocol_repair", frame.frame_id,
+                           reason="retry_forbidden", hint=hint,
+                           repairs=outcome.protocol_repairs)
                 turns.append({"role": "repair", "content": f"protocol_repair: {hint}"})
                 continue
 
+            self._emit("capability_called", frame.frame_id, tool=tool_name,
+                       arguments_digest=probe.arguments_digest)
             record, result = self.registry.call(tool_name, ctx, arguments)
             outcome.calls.append(record)
             if spec.budgeted and record.ok:
                 budget_used += 1
                 record.budget_consumed = True
+            budget_left = (req.knowledge_budget - budget_used
+                           if spec.budgeted else None)
+            self._emit("capability_result", frame.frame_id, tool=tool_name,
+                       ok=record.ok, error=record.error, retryable=record.retryable,
+                       latency_ms=record.latency_ms, budget_left=budget_left)
 
             if not record.ok:
                 if not record.retryable:
@@ -352,6 +394,8 @@ class HarnessAgent:
         status = outcome.status
         if status == "failed":
             outcome.halt_run = frame.requirement.failure_policy == "halt"
+        if status == "awaiting_human":
+            self._emit("awaiting_human", frame.frame_id, summary=outcome.summary)
         # 失败能力 + degrade 策略：帧标记 degraded 但保持状态（Composer 归一化）
         logger.info("frame %s finished: status=%s loops=%d calls=%d repairs=%d",
                     frame.frame_id, status, outcome.loops, len(outcome.calls),
