@@ -91,6 +91,17 @@ curl http://localhost:8300/healthz
 | `nginx` | `nginx:1.27-alpine` | least_conn 反代 + 控制台静态托管 | 1 |
 | `adminer` | `adminer:4` | 数据库调试（`--profile tools`） | 0/1 |
 
+**资源上限**（compose v2 非 Swarm 模式同样生效：`cpus`→`--cpus`、`memory`→`--memory`）：
+
+| 分组 | CPU | 内存 |
+|------|-----|------|
+| 应用层（`migrate` / `api-1,2` / `worker-1,2`） | 1.0 | 512M |
+| `postgres` | 1.0 | 512M |
+| `redis` / `nginx` / `adminer` | 0.5 | 128M |
+
+小规格单机可再下调；LLM 链任务堆积时优先上调 **worker** 的 CPU（LLM 调用本身是 IO 等待，CPU 不必给太多）。
+`worker` 扩容用 `make scale-worker`（已去掉 `container_name`，故 `--scale` 可用）。
+
 ## 4. 环境变量（deploy/.env）
 
 | 变量 | 必改 | 默认 | 说明 |
@@ -179,11 +190,17 @@ curl http://localhost:8300/api/v1/flows/reimbursement/sop
 
 ## 10. 故障排查
 
+以下均为**实测踩过的坑**（其中 4 条由 commit `223556d` 修复）：
+
 | 现象 | 原因 / 处置 |
 |------|------------|
 | `postgres` 反复重启，日志含 `extension "vector" is not available` | 误用了官方 postgres 镜像；须用 `pgvector/pgvector:pg16` |
 | api/worker 报 `NOAUTH Authentication required` | Redis 开了 requirepass 但连接串缺密码；确认 `AUDITOR_REDIS_URL=redis://:<pwd>@redis:6379/0` |
-| `migrate` 退出码非 0 | 看日志：多为 SOP 静态校验失败（坏 YAML / 转移指向不存在的节点），修 `config/sops/` 后 `make init` |
+| **`service "migrate" didn't complete successfully: exit 1`** | ORM 与 `sql/ddl.sql` 的列类型漂移（典型：ORM 用 `String(36)` 而 DDL 是 `uuid`）——`init_db()` 建表与 DDL 打架。已统一为跨库类型：`Uuid`（PG 原生 uuid / SQLite `CHAR(32)`，读写归一 32 位 hex）+ `Vector`（PG `vector(1024)` / SQLite JSON）。⚠️ 必须用 `with_variant` 注入 `PGUuid` 子类，且真类型须从 `sqlalchemy.dialects.postgresql.base` 导入（包级 `postgresql.UUID` 只是 generic `Uuid` 的别名） |
+| **worker 启动即崩，日志连 `localhost:6379`** | YAML 锚点 `<<:` 是**浅合并**：worker 自带 `environment:` 会**整体替换** `*app-base` 的 environment，丢掉 `AUDITOR_REDIS_URL` / `AUDITOR_DATABASE_URL`。正确写法：抽独立 `x-app-env` 锚点，worker 用 `environment: {<<: *x-app-env, AUDITOR_QUEUE_MODE: inline}` 追加 |
+| **nginx 恒 `unhealthy`，但服务其实正常** | 健康检查写了 `localhost`：容器内先解析 `::1`，而 `listen 80` 仅 IPv4 → 拒连。改为 `127.0.0.1` |
+| **任务永远停在 `received`，worker 空转不消费** | 派发端投 `auditor` 队列，worker 却消费 arq 默认的 `arq:queue`。须在 `WorkerSettings` 设 `queue_name = settings.arq_queue_name` |
 | api 一直 `unhealthy`，`up` 卡住 | `migrate` 未成功完成；先 `docker compose run --rm migrate` 看输出 |
+| `migrate` 退出码非 0 且日志是校验报错 | SOP 静态校验失败（坏 YAML / 转移指向不存在的节点），修 `config/sops/` 后 `make init` |
 | 改 SOP 后不生效 | SOP 从库读取，需 `make load-sops` 重新装载（改的是文件不是库） |
 | 旧数据卷缺新表（如 run_event） | initdb 不重跑；手动执行 `sql/ddl.sql` 中缺失的 `CREATE TABLE`，或 `make reset`（清库重建） |
