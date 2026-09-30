@@ -1,0 +1,20 @@
+[
+  {
+    "problem_codes": ["SEAL_UNAUTHORIZED", "HIGH_AMOUNT"],
+    "target_node": "fin_manager",
+    "action": "ESCALATE",
+    "priority": 1
+  },
+  {
+    "problem_codes": ["MATERIAL_MISSING", "INCONSISTENT", "MISSING_FIELD"],
+    "target_node": "applicant",
+    "action": "RETURN",
+    "priority": 2
+  },
+  {
+    "problem_codes": ["POLICY_RISK", "RISK_FLAG"],
+    "target_node": "",
+    "action": "COMMENT",
+    "priority": 3
+  }
+]

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.v1.runs import router as runs_router
+from app.api.v1.sops import router as sops_router
 from app.api.v1.webhooks import router
 from app.config import settings
 from app.models.entities import init_db
@@ -22,6 +23,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title=settings.app_name, version="0.4.2-p0", lifespan=lifespan)
 app.include_router(router, prefix="/api/v1")
 app.include_router(runs_router, prefix="/api/v1")
+app.include_router(sops_router, prefix="/api/v1")
 
 
 @app.get("/healthz")

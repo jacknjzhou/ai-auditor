@@ -42,6 +42,7 @@ from app.schemas.canonical import FindingOut
 from worker.pipeline.kernel import events as _ev
 from worker.pipeline.kernel.capabilities import (CapabilityContext,
                                                  default_registry, digest)
+from worker.pipeline.kernel.composer import ComposedDecision, DecisionComposer
 from worker.pipeline.kernel.events import EventRecorder
 from worker.pipeline.kernel.frames import TaskFrame
 from worker.pipeline.kernel.harness import FrameOutcome, HarnessAgent
@@ -277,16 +278,23 @@ def _frame_fingerprint(kind: str, node_id: str, *, scope: dict, snapshot: dict,
 
 @dataclass
 class _RunSink:
-    """run 段内聚合状态（run 与 resume 共用）。"""
+    """run 段内聚合状态（run 与 resume 共用）。
 
-    findings: list[FindingOut] = field(default_factory=list)
-    confidence: float | None = None
-    summary: str = ""
+    findings/confidence/summary 由帧产出列表派生（DecisionComposer 归一前的
+    原始账本），保证 run 首轮与恢复续跑（含 reused 帧）口径完全一致。
+    """
+
+    outcomes: list[FrameOutcome] = field(default_factory=list)  # 帧产出（顺序即执行/复用顺序）
     executed: list[str] = field(default_factory=list)
+    reused: list[str] = field(default_factory=list)
     seq_floor: int = 1  # 下一个可用帧 seq（> 已占用的最大 seq，防 (run_id,seq) 冲突）
     awaiting_frame: TaskFrame | None = None
     awaiting_outcome: FrameOutcome | None = None
     skip: set[tuple[str, str]] = field(default_factory=set)  # (node_id, kind) 已复用
+
+    @property
+    def findings(self) -> list[FindingOut]:
+        return [f for oc in self.outcomes for f in oc.findings]
 
 
 def _make_frame_runner(db: Session, task: AuditTask, ctx: CapabilityContext,
@@ -309,11 +317,7 @@ def _make_frame_runner(db: Session, task: AuditTask, ctx: CapabilityContext,
                      kind=frame.kind, node_id=frame.node_id)
             outcome = harness.run(frame, ctx, _deterministic_actor(frame, rag_query))
             sink.executed.append(frame.frame_id)
-            sink.findings.extend(outcome.findings)
-            if outcome.confidence is not None:
-                sink.confidence = outcome.confidence
-            if outcome.summary:
-                sink.summary = outcome.summary
+            sink.outcomes.append(outcome)
 
             # 帧档案落库（outcome + 指纹；增量重审复用基础）
             fp = _frame_fingerprint(frame.kind, frame.node_id, scope=ctx.scope,
@@ -462,35 +466,45 @@ def _try_suspend(db: Session, task: AuditTask, sink: _RunSink, rec: EventRecorde
     return True
 
 
+def _compose(sink: _RunSink, terminal: str | None) -> ComposedDecision:
+    """帧产出 → 归一化决策输入（第三层 Composer，设计 §3）。"""
+    return DecisionComposer().compose(
+        sink.outcomes, terminal=terminal, executed_frames=sink.executed,
+        reused_frames=sink.reused)
+
+
 def _decide_and_emit(db: Session, task: AuditTask, profile: FlowProfile,
-                     rec: EventRecorder, *, findings: list[FindingOut],
-                     sink: _RunSink, terminal: str | None,
+                     rec: EventRecorder, *, composed: ComposedDecision,
+                     terminal: str | None,
                      writeback_adapter=None, override_level: str | None = None,
                      extra_reason: dict | None = None) -> str:
-    """统一决策出口 + composed/writeback_applied 事件。"""
+    """统一决策出口（Composer 归一 → 决策矩阵 → 回写）+ composed/writeback 事件。"""
     from app.models.entities import EscalationLog
     from app.services.audit_service import _decide_and_writeback
 
-    level = _decide_and_writeback(db, task, profile, findings=findings,
-                                  llm_confidence=sink.confidence,
-                                  llm_summary=sink.summary,
+    reason = {**composed.evidence, **(extra_reason or {})}
+    level = _decide_and_writeback(db, task, profile, findings=composed.findings,
+                                  llm_confidence=composed.confidence,
+                                  llm_summary=composed.summary,
                                   writeback_adapter=writeback_adapter,
                                   override_level=override_level,
-                                  extra_reason=extra_reason)
-    db.flush()  # autoflush=False：让刚挂起的 escalation 行对本查询可见
+                                  extra_reason=reason)
+    db.flush()  # autoflush=False：让刚写出的 escalation 行对本查询可见
     esc = (db.query(EscalationLog).filter_by(task_id=task.id)
            .order_by(EscalationLog.id.desc()).first())
     rec.emit(_ev.EVENT_COMPOSED, level=level, terminal=terminal,
-             n_findings=len(findings), confidence=sink.confidence,
+             n_findings=len(composed.findings), confidence=composed.confidence,
+             degraded=composed.degraded, reused_frames=composed.reused_frames,
              override=override_level is not None)
     rec.emit(_ev.EVENT_WRITEBACK_APPLIED, level=level,
              writeback_status=esc.writeback_status if esc else "none",
              action=esc.action if esc else "",
              target_node=esc.target_node if esc else "")
     logger.info("kernel run %s decided: level=%s frames=%d findings=%d "
-                "terminal=%s conf=%s",
-                task.id, level, len(sink.executed), len(findings),
-                terminal, sink.confidence)
+                "terminal=%s conf=%s reused=%d",
+                task.id, level, len(composed.executed_frames),
+                len(composed.findings), terminal, composed.confidence,
+                len(composed.reused_frames))
     return level
 
 
@@ -546,8 +560,9 @@ def run_kernel_pipeline(db: Session, task: AuditTask, *, profile: FlowProfile,
 
         _persist_findings(db, task, sink.findings)
         _persist_chain_traces(db, task, ctx.cache_get("llm_chain_result"))
-        _decide_and_emit(db, task, profile, rec, findings=sink.findings,
-                         sink=sink, terminal=result.terminal,
+        _decide_and_emit(db, task, profile, rec,
+                         composed=_compose(sink, result.terminal),
+                         terminal=result.terminal,
                          writeback_adapter=writeback_adapter)
         return "decided"
     finally:
@@ -647,7 +662,6 @@ def resume_kernel_run(db: Session, task: AuditTask, human_task: HumanTask, *,
     # ---- 已完成帧恢复 + reused 判定（指纹按当前输入重算比对） ----
     stored = (db.query(TaskFrameRecord).filter_by(run_id=task.id)
               .order_by(TaskFrameRecord.seq).all())
-    reused_frames: list[str] = []
     for row in stored:
         sink.seq_floor = max(sink.seq_floor, row.seq + 1)
         if row.status != "completed" or not row.outcome:
@@ -664,15 +678,11 @@ def resume_kernel_run(db: Session, task: AuditTask, human_task: HumanTask, *,
             continue
         oc = FrameOutcome.from_dict(row.outcome)
         oc.frame_id = row.frame_id
-        sink.findings.extend(oc.findings)
-        if oc.confidence is not None:
-            sink.confidence = oc.confidence
-        if oc.summary:
-            sink.summary = oc.summary
+        sink.outcomes.append(oc)
         sink.executed.append(row.frame_id)
+        sink.reused.append(row.frame_id)
         sink.skip.add((row.node_id, row.kind))
         row.outcome = {**row.outcome, "reused": True}
-        reused_frames.append(row.frame_id)
         rec.emit(_ev.EVENT_FRAME_FINISHED, frame_id=row.frame_id, reused=True,
                  status=oc.status, n_findings=len(oc.findings))
 
@@ -689,8 +699,10 @@ def resume_kernel_run(db: Session, task: AuditTask, human_task: HumanTask, *,
     try:
         if action in OVERRIDE_LEVELS:
             # ---- 人工终审：不经流水线直写（矩阵之上的权威，全程留痕） ----
+            composed = ComposedDecision(findings=list(rule_findings),
+                                        terminal="__override__")
             level = _decide_and_emit(
-                db, task, profile, rec, findings=rule_findings, sink=sink,
+                db, task, profile, rec, composed=composed,
                 terminal="__override__", writeback_adapter=writeback_adapter,
                 override_level=OVERRIDE_LEVELS[action],
                 extra_reason={"operator": operator})
@@ -737,9 +749,9 @@ def resume_kernel_run(db: Session, task: AuditTask, human_task: HumanTask, *,
         _persist_findings(db, task, sink.findings)
         _persist_chain_traces(db, task, ctx.cache_get("llm_chain_result"))
         level = _decide_and_emit(
-            db, task, profile, rec, findings=sink.findings, sink=sink,
+            db, task, profile, rec, composed=_compose(sink, terminal),
             terminal=terminal, writeback_adapter=writeback_adapter,
-            extra_reason={"resume_action": action, "reused_frames": reused_frames})
+            extra_reason={"resume_action": action})
         return {"resumed": True, "deduplicated": False, "level": level}
     finally:
         try:

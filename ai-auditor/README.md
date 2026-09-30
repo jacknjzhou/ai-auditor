@@ -15,7 +15,13 @@
 | **内核·能力注册表** | `worker/pipeline/kernel/capabilities.py` | 六项能力（rule_query / knowledge_search / llm_verify / llm_assess / doc_extract / writeback_probe）包装既有资产；确定性 digest 支撑重试签名 |
 | **内核·Harness** | `worker/pipeline/kernel/harness.py` | 串行 tool\|finish 协议 + protocol_repair 修复 + 能力白名单 + 知识预算硬拦截 + retryable=false 同签名禁重 + 强制能力完成门槛 |
 | **内核·Planner** | `worker/pipeline/kernel/planner.py` | AuditSOP 校验 + builtin 等价 SOP（零迁移）；确定性展开 SOP→TaskFrame 队列；运行时条件（on_*）二次展开 |
-| **内核·执行器** | `app/services/kernel_runner.py` | 内核路径编排：Planner 展开 → Harness 逐帧（确定性 actor）→ 运行时条件解析 → 复用统一决策回写出口 |
+| **内核·执行器** | `app/services/kernel_runner.py` | 内核路径编排：Planner 展开 → Harness 逐帧（确定性 actor）→ 运行时条件解析 → 复用统一决策回写出口；**挂起-恢复 + 增量重审**（human_gate 挂起、resume 复用未变帧） |
+| **内核·事件流** | `worker/pipeline/kernel/events.py` | EventRecorder：九类事件白名单（frame_planned/started/capability_called/result/protocol_repair/awaiting_human/frame_finished/composed/writeback_applied/resumed）、seq 单调、flush 幂等、支持 start_seq 续写 |
+| **内核·Composer** | `worker/pipeline/kernel/composer.py` | 第三层：帧产出归一（findings/置信度/摘要/风险标记/降级/复用证据），决策矩阵仍是机器结论的最终确定性 gate |
+| **内核·SOP 装载** | `worker/pipeline/kernel/sop_registry.py` | **新流零代码接入**：YAML/JSON SOP 装载 + 静态校验 + `flow_profile` upsert（含路由表） |
+| **run 观测 API** | `app/api/v1/runs.py` | `GET /runs/{id}/events?after_seq=`（增量游标）、`/capability-calls`（预算/延迟审计）、`POST /audit-tasks/{id}/resume`（HMAC + resume_token 幂等） |
+| **SOP 管理 API** | `app/api/v1/sops.py` | `PUT/GET /flows/{code}/sop` + `/sop/validate`（控制台接入面） |
+| **示例 SOP** | `config/sops/seal_application.yaml` | 用章申请 SOP（六节点含 human_gate）+ 路由表，演示零代码接入 |
 | LLM 客户端 | `worker/pipeline/llm/client.py` | NewAPI OpenAI 兼容协议；重试+指数退避；JSON 提取（围栏剥离）；CallTrace 留痕 |
 | LLM 审核链 | `worker/pipeline/llm/chain.py` | S1 材料→S2 一致性→S3 制度→S4 风险置信；`<materials>` 隔离+注入扫描；问题码白名单归一化；单步降级 |
 | 任务派发 | `app/services/dispatcher.py` | queue_mode=inline（默认）|arq（Redis 队列）；arq 失败自动降级 inline |
@@ -26,6 +32,44 @@
 | 回写执行 | `worker/pipeline/routing/writeback.py` | FULL_API→COMMENT_ONLY→IM_ONLY 降级链；EscalationLog 留痕；Mock/Flaky/Http 适配器 |
 | 审核流水线 | `app/services/audit_service.py` | legacy 路径：事件→规则→[RAG+LLM 链]→融合→路由回写落库；先内存聚合后持久化。决策回写出口 `_decide_and_writeback` 与内核共用 |
 | 数据模型 | `app/models/entities.py` + `sql/ddl.sql` | ORM（测试用 SQLite）+ 生产 PostgreSQL DDL |
+
+## 新流零代码接入（v3.0 内核 §5 / §9-T6）
+
+新增一条审批流审核，只需两份配置，**不改动 Runner / Planner / Harness 任何代码**：
+
+```bash
+# 1) SOP 状态机（YAML/JSON）：节点 / 转移 / 能力白名单 / 知识预算 / 失败策略
+#    示例见 config/sops/seal_application.yaml（用章申请，六节点含 human_gate）
+# 2) 路由表：problem_code → 处置动作 / 目标节点
+#    示例见 config/sops/seal_application.routes.json
+```
+
+```python
+from worker.pipeline.kernel.sop_registry import install_flow_sop
+install_flow_sop(db, "seal_application",
+                 "config/sops/seal_application.yaml",
+                 route_table_path="config/sops/seal_application.routes.json",
+                 mode="advisory", writeback_tier="COMMENT_ONLY")
+db.commit()
+```
+
+或走管理 API：`PUT /api/v1/flows/{flow_code}/sop`（内联 DSL，装载期静态校验）。
+接入后 `AUDITOR_KERNEL_MODE=true` 即按配置驱动执行；`flow_profile.audit_sop` 为空时
+回退内置等价 SOP（零迁移）。端到端验收见 `tests/test_sop_onboarding.py`。
+
+## 挂起-恢复（v2.1 §1 / v3.0 §6）
+
+`human_gate` 帧挂起 → 写 `human_task`（resume_token）+ 任务置 `awaiting_human`（不出决策）；
+人工动作经 `POST /api/v1/audit-tasks/{id}/resume` 幂等恢复：
+
+| action | 语义 |
+|--------|------|
+| `COMMENT` | 已完成帧全复用，从挂起点续跑下游后决策（链结果随 run_cache 还原，零重复 LLM 调用） |
+| `SUPPLY_MATERIAL` | `patch_fields` 合并进快照 + 规则全量重算；帧指纹未变者 `reused`（材料类帧重跑、摘录未变帧复用） |
+| `OVERRIDE_PASS` / `OVERRIDE_REJECT` | 不经流水线直写终审（`matrix_reason.cell=human_override`） |
+
+一次 run 最多 `AUDITOR_MAX_SUSPEND_ROUNDS`（默认 3）轮挂起，超限强制出决策（防死循环）。
+验收见 `tests/test_resume.py`。
 
 ## 快速开始
 
@@ -69,7 +113,8 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 | `AUDITOR_LLM_MODEL` | gpt-4o-mini | NewAPI 网关侧的模型名 |
 | `AUDITOR_QUEUE_MODE` | inline | inline（进程内后台）\| arq（Redis 队列，生产用） |
 | `AUDITOR_REDIS_URL` | redis://localhost:6379/0 | arq 模式的 Redis 地址 |
-| `AUDITOR_KERNEL_MODE` | false | v3.0 内核执行（Planner SOP 展开 → Harness 逐帧）；false 走 legacy 硬编码流水线。等价迁移验收见 `tests/test_kernel_pipeline.py`；SOP 挂 `flow_profile.audit_sop`（NULL=内置等价 SOP） |
+| `AUDITOR_KERNEL_MODE` | false | v3.0 内核执行（Planner SOP 展开 → Harness 逐帧 → Composer 归一）；false 走 legacy 硬编码流水线。等价迁移验收见 `tests/test_kernel_pipeline.py`；SOP 挂 `flow_profile.audit_sop`（NULL=内置等价 SOP） |
+| `AUDITOR_MAX_SUSPEND_ROUNDS` | 3 | 一次 run 最多挂起-恢复轮次（防 human_gate 死循环，超限强制出决策） |
 | `AUDITOR_RAG_ENABLED` | false | 开启 RAG 制度摘录（S3 引用生效期内的条款） |
 | `AUDITOR_EMBEDDING_MODEL` | text-embedding-3-small | NewAPI /v1/embeddings 模型；无 Key 时回落哈希嵌入 |
 
@@ -78,15 +123,16 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 ```
 ai-auditor/
 ├── app/            # FastAPI 应用（API 进程）
-│   ├── api/v1/     # webhooks 入站 + 任务查询
+│   ├── api/v1/     # webhooks 入站 + 任务查询 + run 事件/挂起恢复 + SOP 管理
 │   ├── schemas/    # Canonical Model 标准单据契约
 │   ├── models/     # SQLAlchemy 实体（与 sql/ddl.sql 对应）
-│   └── services/   # 审核流水线编排
+│   └── services/   # 审核流水线编排（legacy + kernel_runner 内核）
 ├── worker/         # Worker 进程模块（P1 接 arq 独立进程）
-│   └── pipeline/   # rules 规则引擎 / fusion 决策矩阵
+│   └── pipeline/   # rules 规则引擎 / fusion 决策矩阵 / kernel 三层内核 / llm / rag / routing
+├── config/sops/    # 示例 SOP（YAML）+ 路由表（JSON）—— 新流零代码接入
 ├── sql/            # 生产 PostgreSQL DDL
-├── deploy/         # systemd unit（详细设计 §13）
-└── tests/          # 27 个用例：规则引擎/决策矩阵/webhook
+├── deploy/         # Dockerfile / docker-compose / nginx / systemd（详细设计 §13）
+└── tests/          # 120 个用例：规则/矩阵/webhook/内核等价迁移/事件流/挂起恢复/零代码接入
 ```
 
 ## P1 待办（对齐详细设计 §15）

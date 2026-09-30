@@ -21,6 +21,7 @@ WORKDIR /app
 COPY app/ ./app/
 COPY worker/ ./worker/
 COPY sql/ ./sql/
+COPY config/ ./config/
 RUN chown -R auditor:auditor /app
 
 USER auditor

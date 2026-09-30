@@ -1,0 +1,94 @@
+# 用章申请审核 SOP —— "新流零代码接入"示例（v3.0 设计 §5 / §9-T6）
+#
+# 接入方式（无需改动 Runner / Planner / Harness 任何代码）：
+#   from worker.pipeline.kernel.sop_registry import install_flow_sop
+#   install_flow_sop(db, "seal_application",
+#                    "config/sops/seal_application.yaml",
+#                    route_table_path="config/sops/seal_application.routes.json",
+#                    mode="advisory", writeback_tier="COMMENT_ONLY")
+#
+# 形态与内置等价 SOP（AuditSOP.builtin）完全一致：
+#   - kind ∈ {rule_eval, llm_verify, knowledge_check, human_gate, risk_assess, writeback}
+#   - transitions 条件三形态：always / never / on_* 运行时条件 / 规则 DSL clause
+#   - required_capabilities 即能力白名单（越界调用被 Harness 拦截）
+sop_code: seal_application
+entry: intake
+nodes:
+  - id: intake
+    kind: rule_eval
+    instruction: 求值用章申请规则（用章类型 / 必填项 / 授权范围）
+    requirements:
+      - 全部启用规则已求值
+    required_capabilities:
+      - rule_query
+    completion_criteria:
+      - 规则求值完成且 findings 可用
+    transitions:
+      - cond: always
+        next: material
+
+  - id: material
+    kind: llm_verify
+    instruction: 核验用章事由、附件与审批授权链一致性
+    requirements:
+      - 材料核验完成
+      - 一致性核对完成
+    required_capabilities:
+      - llm_verify
+    optional_capabilities:
+      - doc_extract
+    failure_policy: degrade
+    transitions:
+      - cond: on_hard_violation
+        next: __reject__
+      - cond: always
+        next: policy
+
+  - id: policy
+    kind: knowledge_check
+    instruction: 检索印章管理制度条款并逐项核对
+    requirements:
+      - 制度条款检索完成
+    required_capabilities:
+      - knowledge_search
+    knowledge_budget: 3
+    transitions:
+      - cond: always
+        next: gate
+
+  - id: gate
+    kind: human_gate
+    instruction: 合同章 / 公章用章或高风险事项时挂起等待实体人确认
+    requirements:
+      - 人工确认完成
+    allowed_actions:
+      - handoff_human
+      - override
+      - comment
+    transitions:
+      - cond: on_awaiting_resolved
+        next: risk
+      - cond: always
+        next: risk
+
+  - id: risk
+    kind: risk_assess
+    instruction: 评估用章风险与置信度
+    requirements:
+      - 风险评估完成
+    required_capabilities:
+      - llm_assess
+    transitions:
+      - cond: always
+        next: writeback
+
+  - id: writeback
+    kind: writeback
+    instruction: 按处置计划回写 OA 审批系统
+    requirements:
+      - 回写计划已生成
+    required_capabilities:
+      - writeback_probe
+    transitions:
+      - cond: always
+        next: __done__
