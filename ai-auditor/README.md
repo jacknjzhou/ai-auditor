@@ -102,6 +102,27 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 
 查询任务：`GET /api/v1/audit-tasks/{task_id}`（status/findings/decision）。
 
+## 容器化部署（Docker Compose 全套）
+
+一键起全栈：PostgreSQL(pgvector) + Redis + 自动建库 + 自动装载 SOP + API×2 + Worker×2 + Nginx。
+
+```bash
+cd deploy
+cp .env.example .env      # 修改全部 change-me 密钥
+make up                   # 或 docker compose -f docker-compose.yml up -d --build
+make ps && curl http://localhost:8300/healthz
+```
+
+- **自动建库**：postgres 数据卷为空时自动执行 `sql/ddl.sql`（pgcrypto + pgvector 扩展、HNSW 索引）；
+- **一次性 `migrate` 服务**：`python -m app.cli init --seed` —— 建表 + 装载 `config/sops/*.yaml`
+  到 `flow_profile` + 演示种子（幂等），成功退出后 api/worker 才启动；
+- **控制台原型**：Nginx 托管于 `http://localhost:8300/console/`；
+- **运维命令**：`make load-sops`（改 SOP 免重建镜像）、`make check`（数据层自检）、
+  `make backup/restore/psql/scale-worker`；详见 `deploy/README-container.md`。
+
+裸机（systemd）方案见 `deploy/auditor-api.service`、`deploy/auditor-worker@.service`，
+与容器化二选一，共用同一套环境变量与 CLI（`python -m app.cli init|load-sops|check|seed`）。
+
 ## 配置（环境变量前缀 AUDITOR_）
 
 | 变量 | 默认 | 说明 |
@@ -115,6 +136,7 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 | `AUDITOR_REDIS_URL` | redis://localhost:6379/0 | arq 模式的 Redis 地址 |
 | `AUDITOR_KERNEL_MODE` | false | v3.0 内核执行（Planner SOP 展开 → Harness 逐帧 → Composer 归一）；false 走 legacy 硬编码流水线。等价迁移验收见 `tests/test_kernel_pipeline.py`；SOP 挂 `flow_profile.audit_sop`（NULL=内置等价 SOP） |
 | `AUDITOR_MAX_SUSPEND_ROUNDS` | 3 | 一次 run 最多挂起-恢复轮次（防 human_gate 死循环，超限强制出决策） |
+| `AUDITOR_SOP_MODE` / `AUDITOR_SOP_WRITEBACK_TIER` | advisory / COMMENT_ONLY | `config/sops/*.yaml` 装载时**新建** flow 的默认放权档位（已存在 flow 保留运营侧调整，`--force` 可覆盖） |
 | `AUDITOR_RAG_ENABLED` | false | 开启 RAG 制度摘录（S3 引用生效期内的条款） |
 | `AUDITOR_EMBEDDING_MODEL` | text-embedding-3-small | NewAPI /v1/embeddings 模型；无 Key 时回落哈希嵌入 |
 
@@ -124,15 +146,16 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 ai-auditor/
 ├── app/            # FastAPI 应用（API 进程）
 │   ├── api/v1/     # webhooks 入站 + 任务查询 + run 事件/挂起恢复 + SOP 管理
+│   ├── cli.py      # 运维 CLI：init / load-sops / seed / check（容器 init 服务同源）
 │   ├── schemas/    # Canonical Model 标准单据契约
 │   ├── models/     # SQLAlchemy 实体（与 sql/ddl.sql 对应）
 │   └── services/   # 审核流水线编排（legacy + kernel_runner 内核）
 ├── worker/         # Worker 进程模块（P1 接 arq 独立进程）
 │   └── pipeline/   # rules 规则引擎 / fusion 决策矩阵 / kernel 三层内核 / llm / rag / routing
 ├── config/sops/    # 示例 SOP（YAML）+ 路由表（JSON）—— 新流零代码接入
-├── sql/            # 生产 PostgreSQL DDL
-├── deploy/         # Dockerfile / docker-compose / nginx / systemd（详细设计 §13）
-└── tests/          # 120 个用例：规则/矩阵/webhook/内核等价迁移/事件流/挂起恢复/零代码接入
+├── sql/            # 生产 PostgreSQL DDL（pgcrypto + pgvector）
+├── deploy/         # Dockerfile / docker-compose（一键全栈）/ nginx / Makefile / systemd
+└── tests/          # 129 个用例：规则/矩阵/webhook/内核等价迁移/事件流/挂起恢复/零代码接入/CLI
 ```
 
 ## P1 待办（对齐详细设计 §15）

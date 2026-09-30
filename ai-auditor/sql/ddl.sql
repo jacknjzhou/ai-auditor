@@ -4,7 +4,9 @@
 -- 测试环境使用内存 SQLite 由 ORM 自动建表，此文件仅用于生产 PG。
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
--- P1 追加: CREATE EXTENSION IF NOT EXISTS vector;
+-- P1/P3 追加：pgvector —— knowledge_chunk.embedding vector(1024) 与 HNSW 索引必需。
+-- 官方 postgres 镜像不含该扩展，故容器化部署统一使用 pgvector/pgvector:pg16 镜像。
+CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE connector_config (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
