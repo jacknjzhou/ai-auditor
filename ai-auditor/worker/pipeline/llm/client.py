@@ -44,6 +44,21 @@ class CallTrace:
     attempts: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {"step": self.step, "model": self.model, "ok": self.ok,
+                "latency_ms": self.latency_ms, "degraded": self.degraded,
+                "error": self.error, "response_digest": self.response_digest,
+                "attempts": self.attempts, "extra": self.extra}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "CallTrace":
+        return cls(step=d.get("step", ""), model=d.get("model", ""),
+                   ok=bool(d.get("ok")), latency_ms=int(d.get("latency_ms", 0)),
+                   degraded=bool(d.get("degraded")), error=str(d.get("error", "")),
+                   response_digest=str(d.get("response_digest", "")),
+                   attempts=int(d.get("attempts", 0)),
+                   extra=d.get("extra") or {})
+
 
 def _extract_json(text: str) -> dict | None:
     """从模型回复中提取 JSON 对象：先直接解析，失败剥代码围栏，再失败取首个 {...} 块。"""

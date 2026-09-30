@@ -203,3 +203,41 @@ CREATE TABLE capability_call (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX ix_capcall_run ON capability_call(run_id, frame_id);
+
+-- P3.0-T5: human_task 待办（挂起-恢复；从 escalation_log 分离"待办"语义）
+CREATE TABLE human_task (
+    id            UUID PRIMARY KEY,
+    run_id        UUID NOT NULL REFERENCES audit_task(id),
+    seq           INTEGER NOT NULL DEFAULT 0,       -- 挂起时的 run_event seq
+    frame_id      VARCHAR(80) NOT NULL DEFAULT '',
+    node_id       VARCHAR(64) NOT NULL DEFAULT '',
+    problem_codes JSONB NOT NULL DEFAULT '[]',
+    assignee_role VARCHAR(64) NOT NULL DEFAULT '',
+    assignee_user VARCHAR(64),
+    options       JSONB NOT NULL DEFAULT '[]',
+    due_at        TIMESTAMPTZ,
+    status        VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending|done|expired|cancelled
+    resume_token  VARCHAR(64) NOT NULL UNIQUE,
+    result        JSONB,
+    run_cache     JSONB,                            -- run 级瞬态（增量重审链结果缓存）
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at   TIMESTAMPTZ
+);
+CREATE INDEX ix_human_task_run ON human_task(run_id);
+
+-- P3.0-T5: task_frame 帧档案（帧级执行留痕 + 增量重审复用基础）
+CREATE TABLE task_frame (
+    id          BIGSERIAL PRIMARY KEY,
+    run_id      UUID NOT NULL REFERENCES audit_task(id),
+    seq         INTEGER NOT NULL,
+    frame_id    VARCHAR(80) NOT NULL,
+    node_id     VARCHAR(64) NOT NULL DEFAULT '',
+    kind        VARCHAR(24) NOT NULL,
+    status      VARCHAR(24) NOT NULL DEFAULT 'queued',
+    requirement JSONB NOT NULL DEFAULT '{}',
+    depends_on  JSONB NOT NULL DEFAULT '[]',
+    outcome     JSONB,                              -- FrameOutcome + fingerprint/reused
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at TIMESTAMPTZ,
+    CONSTRAINT uq_task_frame_run_seq UNIQUE (run_id, seq)
+);

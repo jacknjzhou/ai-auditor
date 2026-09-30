@@ -102,6 +102,22 @@ class StepResult:
     cited_clauses: list[str] = field(default_factory=list)
     trace: CallTrace | None = None
 
+    def to_dict(self) -> dict[str, Any]:
+        return {"step": self.step,
+                "findings": [f.model_dump() for f in self.findings],
+                "degraded": self.degraded, "notes": self.notes,
+                "cited_clauses": list(self.cited_clauses),
+                "trace": self.trace.to_dict() if self.trace else None}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "StepResult":
+        tr = d.get("trace")
+        return cls(step=str(d.get("step", "")),
+                   findings=[FindingOut.model_validate(f) for f in d.get("findings") or []],
+                   degraded=bool(d.get("degraded")), notes=str(d.get("notes", "")),
+                   cited_clauses=list(d.get("cited_clauses") or []),
+                   trace=CallTrace.from_dict(tr) if tr else None)
+
 
 @dataclass
 class LLMChainResult:
@@ -116,6 +132,24 @@ class LLMChainResult:
     @property
     def traces(self) -> list[CallTrace]:
         return [s.trace for s in self.steps if s.trace is not None]
+
+    def to_dict(self) -> dict[str, Any]:
+        """序列化（T5 增量重审：挂起时缓存链结果，恢复时免重复调用 LLM）。"""
+        return {"findings": [f.model_dump() for f in self.findings],
+                "confidence": self.confidence, "risk_flags": list(self.risk_flags),
+                "summary": self.summary, "cited_clauses": list(self.cited_clauses),
+                "steps": [s.to_dict() for s in self.steps],
+                "degraded_any": self.degraded_any}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "LLMChainResult":
+        return cls(findings=[FindingOut.model_validate(f) for f in d.get("findings") or []],
+                   confidence=d.get("confidence"),
+                   risk_flags=list(d.get("risk_flags") or []),
+                   summary=str(d.get("summary", "")),
+                   cited_clauses=list(d.get("cited_clauses") or []),
+                   steps=[StepResult.from_dict(s) for s in d.get("steps") or []],
+                   degraded_any=bool(d.get("degraded_any")))
 
 
 class AuditChainProtocol(Protocol):

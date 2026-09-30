@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # 执行内核（P3.0）：kernel=Planner+Harness 三层内核（v3.0 设计）；
     # false 时走 P0/P1 硬编码流水线（等价迁移验收期保留，稳定后移除）
     kernel_mode: bool = False
+    # 挂起-恢复（P3.0-T5）：一次 run 最多 N 轮挂起-恢复，防 human_gate 死循环（v2.1 §1.1）
+    max_suspend_rounds: int = 3
 
     # LLM 模型网关（NewAPI，OpenAI 兼容协议）
     llm_enabled: bool = False  # P0 默认关闭；P1 审核链就绪后置 True

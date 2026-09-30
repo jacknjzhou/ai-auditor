@@ -216,11 +216,10 @@ def test_awaiting_human_event(db_session, monkeypatch):
     ah = [r for r in rows if r.event_type == "awaiting_human"]
     assert len(ah) == 1
     assert ah[0].frame_id == f"{tid}:f02"  # gate 帧
-    # awaiting_human 后无后续帧（run 停止）：frame_finished → composed → writeback_applied
+    # T5：awaiting_human 后 gate 帧收尾（frame_finished），run 挂起——
+    # 不再有 composed / writeback_applied（决策延后至 resume）
     tail = [(r.seq, r.event_type) for r in rows if r.seq > ah[0].seq]
-    assert tail == [(ah[0].seq + 1, "frame_finished"),
-                    (ah[0].seq + 2, "composed"),
-                    (ah[0].seq + 3, "writeback_applied")]
+    assert tail == [(ah[0].seq + 1, "frame_finished")]
 
 
 # ---------------------------------------------------------------------------

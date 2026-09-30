@@ -209,9 +209,10 @@ class AuditPlanner:
         self.engine = RuleEngine(functions)
 
     # ---- 主入口 ----
-    def plan(self, sop: AuditSOP, run_id: str, scope: dict | None = None) -> PlanResult:
-        """从 entry 展开确定性前缀。"""
-        return self._walk(sop, run_id, sop.entry, seq_start=1,
+    def plan(self, sop: AuditSOP, run_id: str, scope: dict | None = None, *,
+             seq_start: int = 1) -> PlanResult:
+        """从 entry 展开确定性前缀（seq_start 供 T5 增量重审偏移帧序号）。"""
+        return self._walk(sop, run_id, sop.entry, seq_start=seq_start,
                           depends_on=[], scope=scope or {})
 
     def expand(self, sop: AuditSOP, run_id: str, node_id: str, *,

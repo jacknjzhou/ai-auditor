@@ -202,6 +202,57 @@ class CapabilityCallRecord(Base):
     __table_args__ = (Index("ix_capcall_run", "run_id", "frame_id"),)
 
 
+class HumanTask(Base):
+    """human_task 待办（v2.1 增补设计 §1.2 / v3.0 §6，T5）——从 escalation_log 分离的挂起语义。
+
+    挂起：human_gate 帧 finish awaiting_human → 写本表 + task.status=awaiting_human；
+    恢复：人工动作（SUPPLY_MATERIAL/OVERRIDE_PASS/OVERRIDE_REJECT/COMMENT）经
+    resume_token 幂等恢复（重复回调不产生二次恢复）；result 记录人工决议全量留痕。
+    run_cache 为 run 级瞬态（增量重审的链结果缓存等），闭单后可清理。
+    """
+    __tablename__ = "human_task"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_task.id"))
+    seq: Mapped[int] = mapped_column(Integer, default=0)  # 挂起时的 run_event seq
+    frame_id: Mapped[str] = mapped_column(String(80), default="")
+    node_id: Mapped[str] = mapped_column(String(64), default="")
+    problem_codes: Mapped[list] = mapped_column(JSON, default=list)
+    assignee_role: Mapped[str] = mapped_column(String(64), default="")
+    assignee_user: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|done|expired|cancelled
+    resume_token: Mapped[str] = mapped_column(String(64), unique=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    run_cache: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TaskFrameRecord(Base):
+    """task_frame 帧档案（v3.0 设计 §7，T5）——帧级执行留痕 + 增量重审复用基础。
+
+    outcome JSON = FrameOutcome.to_dict() + {"fingerprint": ...}：指纹按帧 kind
+    覆盖其真实输入（规则帧=scope、llm_verify=snapshot、llm_assess=规则结论+摘录、
+    knowledge_check=rag query、writeback=回写档位），恢复时指纹未变的帧直接复用
+    上轮结果（reused=true），不重复执行能力、不重复调用 LLM、不重复落 findings。
+    """
+    __tablename__ = "task_frame"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(36), ForeignKey("audit_task.id"))
+    seq: Mapped[int] = mapped_column(Integer)  # (run_id, seq) 唯一
+    frame_id: Mapped[str] = mapped_column(String(80))
+    node_id: Mapped[str] = mapped_column(String(64), default="")
+    kind: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    requirement: Mapped[dict] = mapped_column(JSON, default=dict)
+    depends_on: Mapped[list] = mapped_column(JSON, default=list)
+    outcome: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    __table_args__ = (Index("uq_task_frame_run_seq", "run_id", "seq", unique=True),)
+
+
 class KnowledgeDoc(Base):
     """制度文档（版本化，生效期按单据提交日过滤）。"""
     __tablename__ = "knowledge_doc"

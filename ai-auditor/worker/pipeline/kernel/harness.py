@@ -110,6 +110,25 @@ class FrameOutcome:
             "protocol_repairs": self.protocol_repairs, "loops": self.loops,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "FrameOutcome":
+        """从 task_frame.outcome JSON 恢复（T5 增量重审：指纹未变帧直接复用）。
+
+        calls 不恢复执行记录（复用帧不再执行能力，不产生新调用留痕）。
+        """
+        return cls(
+            frame_id=str(d.get("frame_id", "")),
+            status=str(d.get("status", "completed")),
+            findings=[FindingOut.model_validate(f) for f in d.get("findings") or []],
+            confidence=d.get("confidence"),
+            risk_flags=list(d.get("risk_flags") or []),
+            reply_fragment=str(d.get("reply_fragment", "")),
+            structured_result=d.get("structured_result"),
+            summary=str(d.get("summary", "")),
+            degraded=bool(d.get("degraded")),
+            halt_run=bool(d.get("halt_run")),
+        )
+
 
 def _collect_findings(calls: list[CapabilityCall],
                       results: dict[int, dict]) -> list[FindingOut]:

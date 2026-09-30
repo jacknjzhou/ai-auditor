@@ -29,11 +29,13 @@ EVENT_AWAITING_HUMAN = "awaiting_human"
 EVENT_FRAME_FINISHED = "frame_finished"
 EVENT_COMPOSED = "composed"
 EVENT_WRITEBACK_APPLIED = "writeback_applied"
+EVENT_RESUMED = "resumed"  # v2.1 §3：挂起-恢复事件（T5）
 
 EVENT_TYPES = frozenset({
     EVENT_FRAME_PLANNED, EVENT_FRAME_STARTED, EVENT_CAPABILITY_CALLED,
     EVENT_CAPABILITY_RESULT, EVENT_PROTOCOL_REPAIR, EVENT_AWAITING_HUMAN,
     EVENT_FRAME_FINISHED, EVENT_COMPOSED, EVENT_WRITEBACK_APPLIED,
+    EVENT_RESUMED,
 })
 
 
@@ -55,8 +57,9 @@ class _PendingCapabilityCall:
 class EventRecorder:
     """单次 run 的事件收集器（无跨 run 状态；T5 挂起-恢复按 run_id 续写）。"""
 
-    def __init__(self) -> None:
-        self._seq = 0
+    def __init__(self, start_seq: int = 0) -> None:
+        # start_seq：run_event 已有最大 seq（挂起-恢复场景续写，保持 (run_id,seq) 唯一）
+        self._seq = start_seq
         self._events: list[_PendingEvent] = []
         self._cap_calls: list[_PendingCapabilityCall] = []
         self._flushed = False
@@ -80,6 +83,11 @@ class EventRecorder:
                                                       budget_left=budget_left))
 
     # ---------- 观测（测试/调试用） ----------
+    @property
+    def current_seq(self) -> int:
+        """当前最大 seq（挂起时写入 human_task.seq 的取值来源）。"""
+        return self._seq
+
     def snapshot(self) -> list[tuple[int, str, str]]:
         """返回 (seq, event_type, frame_id) 紧凑序列，供快照比对。"""
         return [(e.seq, e.event_type, e.frame_id) for e in self._events]

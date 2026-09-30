@@ -227,7 +227,15 @@ GATE_SOP = {
 }
 
 
-def test_human_gate_stops_run_but_still_decides(db_session, monkeypatch):
+def test_human_gate_suspends_run(db_session, monkeypatch):
+    """T5：human_gate 帧 → 挂起（不出决策），硬违规以 problem_codes 留存待人工。
+
+    挂起语义变更（T3「停帧仍出决策」→ T5「挂起等待人工」）：run 停在 gate 帧，
+    暂不写审计决策；规则硬违规（REJECT 级 finding）随 human_task.problem_codes
+    存档，恢复时仍由决策矩阵照常 gate（见 test_t5_resume_* 用例）。
+    """
+    from app.models.entities import HumanTask, TaskFrameRecord
+
     monkeypatch.setattr(settings, "kernel_mode", True)
     tid = _make_task(snapshot=SNAP_BIG)
     db = SessionLocal()
@@ -237,8 +245,23 @@ def test_human_gate_stops_run_but_still_decides(db_session, monkeypatch):
 
     run_audit_task(tid)
     out = _load(tid)
-    assert out["status"] == "decided"
-    assert out["level"] == "REJECT"  # 矩阵硬违规不因挂起丢失
+    assert out["status"] == "awaiting_human"
+    assert out["level"] is None  # 挂起期不出决策
+
+    db = SessionLocal()
+    ht = db.query(HumanTask).filter_by(run_id=tid).one()
+    assert ht.status == "pending"
+    assert ht.node_id == "gate"
+    assert ht.resume_token
+    assert "HIGH_AMOUNT" in ht.problem_codes  # 硬违规留存待人工
+    # 帧档案：intake 已完成并落库（增量重审复用基础）
+    frames = (db.query(TaskFrameRecord).filter_by(run_id=tid)
+              .order_by(TaskFrameRecord.seq).all())
+    assert [f.node_id for f in frames] == ["intake", "gate"]
+    assert frames[0].status == "completed"
+    assert frames[1].status == "awaiting_human"
+    assert frames[0].outcome is not None
+    db.close()
 
 
 # ---------------------------------------------------------------------------

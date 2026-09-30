@@ -80,10 +80,15 @@ def _rag_query(snapshot: dict) -> str:
 
 def _decide_and_writeback(db: Session, task: AuditTask, profile: FlowProfile, *,
                           findings: list[FindingOut], llm_confidence: float | None,
-                          llm_summary: str, writeback_adapter=None) -> str:
+                          llm_summary: str, writeback_adapter=None,
+                          override_level: str | None = None,
+                          extra_reason: dict | None = None) -> str:
     """决策矩阵 → 路由回写 → 任务收尾（legacy 与内核共用的唯一出口）。
 
     不负责 commit（调用方统一提交）；返回决策级别。
+    override_level（T5）：人工终审（OVERRIDE_PASS/OVERRIDE_REJECT）直写级别，
+    不经矩阵——决策矩阵只 gate 机器结论，人工是矩阵之上的权威（全程留痕）；
+    extra_reason：并入 matrix_reason（增量重审 reused 帧标注等审计信息）。
     """
     auto_allowed = (profile.mode in ("semi_auto", "full_auto")
                     and profile.auto_pass_enabled
@@ -92,8 +97,15 @@ def _decide_and_writeback(db: Session, task: AuditTask, profile: FlowProfile, *,
                                   .get("amount", 0) or 0) <= profile.amount_cap))
 
     task.status = "fusion"
-    level, reason = fuse(findings, llm_confidence=llm_confidence,
-                         auto_allowed=auto_allowed)
+    if override_level is not None:
+        level, reason = override_level, {
+            "cell": "human_override", "overridden": True,
+            **(extra_reason or {})}
+    else:
+        level, reason = fuse(findings, llm_confidence=llm_confidence,
+                             auto_allowed=auto_allowed)
+        if extra_reason:
+            reason = {**reason, **extra_reason}
     db.add(AuditDecision(task_id=task.id, level=level, confidence=llm_confidence,
                          matrix_reason=reason))
 
