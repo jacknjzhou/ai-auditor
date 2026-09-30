@@ -11,6 +11,9 @@
 | 规则引擎 | `worker/pipeline/rules/engine.py` | DSL 求值器：and/or/not、比较、in、any_empty、truthy、内置函数；缺失变量 fail-safe；全子句证据轨迹 |
 | 内置函数库 | `worker/pipeline/rules/functions.py` | days_between / budget_balance / duplicate_fingerprint / user_in_role / seal_count_today（P0 桩 + std 注入） |
 | 决策矩阵 | `worker/pipeline/fusion/matrix.py` | 规则×LLM 置信度融合，硬违规 REJECT、自动通过 gate |
+| **内核·帧契约** | `worker/pipeline/kernel/frames.py` | TaskFrame / TaskRequirement（v3.0 设计 §4.1/§4.2）：SOP 静态投影、依赖就绪判定、契约静态校验 |
+| **内核·能力注册表** | `worker/pipeline/kernel/capabilities.py` | 六项能力（rule_query / knowledge_search / llm_verify / llm_assess / doc_extract / writeback_probe）包装既有资产；确定性 digest 支撑重试签名 |
+| **内核·Harness** | `worker/pipeline/kernel/harness.py` | 串行 tool\|finish 协议 + protocol_repair 修复 + 能力白名单 + 知识预算硬拦截 + retryable=false 同签名禁重 + 强制能力完成门槛 |
 | LLM 客户端 | `worker/pipeline/llm/client.py` | NewAPI OpenAI 兼容协议；重试+指数退避；JSON 提取（围栏剥离）；CallTrace 留痕 |
 | LLM 审核链 | `worker/pipeline/llm/chain.py` | S1 材料→S2 一致性→S3 制度→S4 风险置信；`<materials>` 隔离+注入扫描；问题码白名单归一化；单步降级 |
 | 任务派发 | `app/services/dispatcher.py` | queue_mode=inline（默认）|arq（Redis 队列）；arq 失败自动降级 inline |
