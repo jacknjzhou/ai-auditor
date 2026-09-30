@@ -252,8 +252,12 @@ def _run_chain(ctx: CapabilityContext, args: dict[str, Any]):
     chain = ctx.llm_chain
     if chain is None:
         return None
-    excerpts = ctx.scratch.get("policy_excerpts") or args.get("policy_excerpts")
-    result = chain.run(ctx.snapshot, ctx.rule_findings, excerpts)
+    excerpts = ctx.scratch.get("policy_excerpts")
+    if not excerpts:
+        excerpts = args.get("policy_excerpts")
+    # 传副本：scratch 列表会被后续 knowledge_search 追加，禁止别名突变渗入链入参
+    result = chain.run(ctx.snapshot, ctx.rule_findings,
+                       list(excerpts) if excerpts else None)
     ctx.cache_set("llm_chain_result", result)
     return result
 

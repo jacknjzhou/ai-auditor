@@ -137,6 +137,8 @@ class FlowProfile(Base):
     writeback_tier: Mapped[str] = mapped_column(String(16), default="COMMENT_ONLY")
     # FULL_API | COMMENT_ONLY | IM_ONLY
     writeback_config: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 审核 SOP 状态机（v3.0 内核，设计 §5）：None = 内置等价 SOP（零迁移）
+    audit_sop: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     version_no: Mapped[int] = mapped_column(Integer, default=1)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow,
                                                  onupdate=utcnow)

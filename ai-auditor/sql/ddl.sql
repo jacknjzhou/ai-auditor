@@ -155,6 +155,7 @@ CREATE TABLE flow_profile (
     route_table      JSONB NOT NULL DEFAULT '[]',
     writeback_tier   VARCHAR(16) NOT NULL DEFAULT 'COMMENT_ONLY',
     writeback_config JSONB NOT NULL DEFAULT '{}',
+    audit_sop        JSONB,                                   -- 审核 SOP 状态机（v3.0 内核）；NULL = 内置等价 SOP
     version_no       INTEGER NOT NULL DEFAULT 1,
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );

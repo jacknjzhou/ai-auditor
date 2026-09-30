@@ -78,13 +78,49 @@ def _rag_query(snapshot: dict) -> str:
     return " ".join(p for p in parts if p) or str(form.get("amount", ""))
 
 
-def run_audit_task(task_id: str, *, llm_chain=None, writeback_adapter=None) -> None:
-    """执行单个审核任务：预处理快照 → 规则引擎 → [LLM 审核链 S1–S4] → 决策矩阵。
+def _decide_and_writeback(db: Session, task: AuditTask, profile: FlowProfile, *,
+                          findings: list[FindingOut], llm_confidence: float | None,
+                          llm_summary: str, writeback_adapter=None) -> str:
+    """决策矩阵 → 路由回写 → 任务收尾（legacy 与内核共用的唯一出口）。
 
-    P1 挂载点：
-        1. preprocess：附件 OCR / 发票要素抽取 → 回填 snapshot["ocr_struct"]（P1.5）
-        2. llm_chain：✅ 已接入（llm_enabled=False 时跳过，等同 P0 行为）
-        3. routing/writeback：按 flow_profile.route_table 处置回写（P1.4）
+    不负责 commit（调用方统一提交）；返回决策级别。
+    """
+    auto_allowed = (profile.mode in ("semi_auto", "full_auto")
+                    and profile.auto_pass_enabled
+                    and (profile.amount_cap is None
+                         or float((task.snapshot or {}).get("form", {})
+                                  .get("amount", 0) or 0) <= profile.amount_cap))
+
+    task.status = "fusion"
+    level, reason = fuse(findings, llm_confidence=llm_confidence,
+                         auto_allowed=auto_allowed)
+    db.add(AuditDecision(task_id=task.id, level=level, confidence=llm_confidence,
+                         matrix_reason=reason))
+
+    plan = route(profile, level, findings, summary=llm_summary)
+    if plan is not None:
+        execute_writeback(db, profile, plan, task_id=task.id,
+                          instance_id=task.instance_id, decision_level=level,
+                          problem_codes=plan.problem_codes,
+                          adapter=writeback_adapter)
+    else:
+        # shadow 或无需动作：留一条 skipped 记录保证全链路可审计
+        db.add(EscalationLog(task_id=task.id, decision_level=level,
+                             problem_codes=[f.problem_code for f in findings],
+                             writeback_status="skipped_shadow" if profile.mode == "shadow" else "no_action"))
+
+    task.status = "decided"
+    task.finished_at = utcnow()
+    return level
+
+
+def run_audit_task(task_id: str, *, llm_chain=None, writeback_adapter=None) -> None:
+    """执行单个审核任务。
+
+    执行内核二选一（AUDITOR_KERNEL_MODE）：
+      - false（默认）：P0/P1 硬编码流水线（规则 → [LLM 链 S1–S4] → 决策矩阵）；
+      - true：v3.0 内核（AuditPlanner SOP 展开 → Harness 逐帧 → 决策矩阵，
+        见 app/services/kernel_runner.py，等价迁移见 tests/test_kernel_pipeline.py）。
 
     llm_chain 参数用于测试注入 stub（LLMaterialAuditChain 同签名对象）；
     生产默认按 settings.llm_enabled 构建真实链。
@@ -108,6 +144,22 @@ def run_audit_task(task_id: str, *, llm_chain=None, writeback_adapter=None) -> N
                  .all())
         engine = RuleEngine(make_default_functions())
         scope = build_scope(task.snapshot or {})
+
+        profile = db.get(FlowProfile, task.flow_code)
+        if profile is None:
+            profile = FlowProfile(flow_code=task.flow_code, mode="shadow")
+            db.add(profile)
+            db.flush()
+
+        # ---- v3.0 内核路径（AUDITOR_KERNEL_MODE=true） ----
+        if getattr(_s, "kernel_mode", False):
+            from app.services.kernel_runner import run_kernel_pipeline
+            run_kernel_pipeline(db, task, profile=profile, rules=rules,
+                                engine=engine, scope=scope,
+                                llm_chain=llm_chain,
+                                writeback_adapter=writeback_adapter)
+            db.commit()
+            return
 
         findings: list[FindingOut] = []
         for rule in rules:
@@ -165,39 +217,11 @@ def run_audit_task(task_id: str, *, llm_chain=None, writeback_adapter=None) -> N
                            error=tr.error[:1000],
                            response_digest=tr.response_digest))
 
-        # ---- P1.4：FlowProfile（缺省种入 shadow 档案）→ 决策矩阵 → 路由回写 ----
-        profile = db.get(FlowProfile, task.flow_code)
-        if profile is None:
-            profile = FlowProfile(flow_code=task.flow_code, mode="shadow")
-            db.add(profile)
-            db.flush()
-
-        auto_allowed = (profile.mode in ("semi_auto", "full_auto")
-                        and profile.auto_pass_enabled
-                        and (profile.amount_cap is None
-                             or float((task.snapshot or {}).get("form", {})
-                                      .get("amount", 0) or 0) <= profile.amount_cap))
-
-        task.status = "fusion"
-        level, reason = fuse(findings, llm_confidence=llm_confidence,
-                             auto_allowed=auto_allowed)
-        db.add(AuditDecision(task_id=task.id, level=level, confidence=llm_confidence,
-                             matrix_reason=reason))
-
-        plan = route(profile, level, findings, summary=llm_summary)
-        if plan is not None:
-            execute_writeback(db, profile, plan, task_id=task.id,
-                              instance_id=task.instance_id, decision_level=level,
-                              problem_codes=plan.problem_codes,
-                              adapter=writeback_adapter)
-        else:
-            # shadow 或无需动作：留一条 skipped 记录保证全链路可审计
-            db.add(EscalationLog(task_id=task.id, decision_level=level,
-                                 problem_codes=[f.problem_code for f in findings],
-                                 writeback_status="skipped_shadow" if profile.mode == "shadow" else "no_action"))
-
-        task.status = "decided"
-        task.finished_at = utcnow()
+        # ---- 决策矩阵 → 路由回写（legacy 与内核共用出口） ----
+        level = _decide_and_writeback(db, task, profile, findings=findings,
+                                      llm_confidence=llm_confidence,
+                                      llm_summary=llm_summary,
+                                      writeback_adapter=writeback_adapter)
         db.commit()
         logger.info("task %s decided: level=%s findings=%d llm_conf=%s",
                     task_id, level, len(findings), llm_confidence)

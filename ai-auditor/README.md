@@ -14,6 +14,8 @@
 | **内核·帧契约** | `worker/pipeline/kernel/frames.py` | TaskFrame / TaskRequirement（v3.0 设计 §4.1/§4.2）：SOP 静态投影、依赖就绪判定、契约静态校验 |
 | **内核·能力注册表** | `worker/pipeline/kernel/capabilities.py` | 六项能力（rule_query / knowledge_search / llm_verify / llm_assess / doc_extract / writeback_probe）包装既有资产；确定性 digest 支撑重试签名 |
 | **内核·Harness** | `worker/pipeline/kernel/harness.py` | 串行 tool\|finish 协议 + protocol_repair 修复 + 能力白名单 + 知识预算硬拦截 + retryable=false 同签名禁重 + 强制能力完成门槛 |
+| **内核·Planner** | `worker/pipeline/kernel/planner.py` | AuditSOP 校验 + builtin 等价 SOP（零迁移）；确定性展开 SOP→TaskFrame 队列；运行时条件（on_*）二次展开 |
+| **内核·执行器** | `app/services/kernel_runner.py` | 内核路径编排：Planner 展开 → Harness 逐帧（确定性 actor）→ 运行时条件解析 → 复用统一决策回写出口 |
 | LLM 客户端 | `worker/pipeline/llm/client.py` | NewAPI OpenAI 兼容协议；重试+指数退避；JSON 提取（围栏剥离）；CallTrace 留痕 |
 | LLM 审核链 | `worker/pipeline/llm/chain.py` | S1 材料→S2 一致性→S3 制度→S4 风险置信；`<materials>` 隔离+注入扫描；问题码白名单归一化；单步降级 |
 | 任务派发 | `app/services/dispatcher.py` | queue_mode=inline（默认）|arq（Redis 队列）；arq 失败自动降级 inline |
@@ -22,7 +24,7 @@
 | RAG 检索 | `worker/pipeline/rag/retriever.py` | 摄取切片 + 向量×关键词 RRF 融合；**生效期按单据提交日过滤** |
 | 路由引擎 | `worker/pipeline/routing/router.py` | route_table 问题码匹配（priority），shadow 恒不动；ADVISORY 仅 COMMENT |
 | 回写执行 | `worker/pipeline/routing/writeback.py` | FULL_API→COMMENT_ONLY→IM_ONLY 降级链；EscalationLog 留痕；Mock/Flaky/Http 适配器 |
-| 审核流水线 | `app/services/audit_service.py` | 端到端：事件→规则→[RAG+LLM 链]→融合→路由回写落库；先内存聚合后持久化 |
+| 审核流水线 | `app/services/audit_service.py` | legacy 路径：事件→规则→[RAG+LLM 链]→融合→路由回写落库；先内存聚合后持久化。决策回写出口 `_decide_and_writeback` 与内核共用 |
 | 数据模型 | `app/models/entities.py` + `sql/ddl.sql` | ORM（测试用 SQLite）+ 生产 PostgreSQL DDL |
 
 ## 快速开始
@@ -67,6 +69,7 @@ print(r.json())   # {"task_id": "...", "deduplicated": false, "status": "accepte
 | `AUDITOR_LLM_MODEL` | gpt-4o-mini | NewAPI 网关侧的模型名 |
 | `AUDITOR_QUEUE_MODE` | inline | inline（进程内后台）\| arq（Redis 队列，生产用） |
 | `AUDITOR_REDIS_URL` | redis://localhost:6379/0 | arq 模式的 Redis 地址 |
+| `AUDITOR_KERNEL_MODE` | false | v3.0 内核执行（Planner SOP 展开 → Harness 逐帧）；false 走 legacy 硬编码流水线。等价迁移验收见 `tests/test_kernel_pipeline.py`；SOP 挂 `flow_profile.audit_sop`（NULL=内置等价 SOP） |
 | `AUDITOR_RAG_ENABLED` | false | 开启 RAG 制度摘录（S3 引用生效期内的条款） |
 | `AUDITOR_EMBEDDING_MODEL` | text-embedding-3-small | NewAPI /v1/embeddings 模型；无 Key 时回落哈希嵌入 |
 
